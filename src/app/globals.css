@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0a0612;
+  --color-ink-2: #120a22;
+  --color-brand: #7b5bf0;
+  --color-brand-2: #e0457b;
+  --color-brand-3: #3da2f4;
+  --color-accent: #16b07a;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: #ece8f5;
+}
+
+/* Vibrant moving aurora backdrop for the whole app. */
+body {
+  background:
+    radial-gradient(60% 50% at 15% 0%, rgba(123, 91, 240, 0.25), transparent 60%),
+    radial-gradient(55% 45% at 100% 10%, rgba(224, 69, 123, 0.22), transparent 55%),
+    radial-gradient(50% 40% at 50% 100%, rgba(61, 162, 244, 0.18), transparent 60%),
+    var(--color-ink);
+  background-attachment: fixed;
+}
+
+/* Animated gradient text / fills. */
+@keyframes gradient-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-pan 8s ease infinite;
+}
+.text-gradient {
+  background-image: linear-gradient(100deg, #b69bff, #ff7eb3, #5ec4ff, #b69bff);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 8s ease infinite;
+}
+
+/* Glassmorphism surface. */
+.glass {
+  background: rgba(24, 16, 42, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glow {
+  box-shadow: 0 0 0 1px rgba(123, 91, 240, 0.4), 0 12px 40px -12px rgba(123, 91, 240, 0.55);
+}
+
+/* Checkerboard backdrop for transparency-aware previews. */
+.checker {
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* Colorful range sliders. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7b5bf0, #e0457b);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(123, 91, 240, 0.5);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(123, 91, 240, 0.5);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}

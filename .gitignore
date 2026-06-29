@@ -1,0 +1,37 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# generated icon manifest
+/src/icons.generated.ts
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+
+# env
+.env*.local
+.env
+
+# vercel
+.vercel
+
+# ngrok secrets / local link config
+.ngrok-auth
+.ngrok-domain
+.serve.pid
+
+# typescript
+*.tsbuildinfo
