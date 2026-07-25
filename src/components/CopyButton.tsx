@@ -9,22 +9,25 @@ export function CopyButton({
 }: {
   text: string;
   label?: string;
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "dark";
 }) {
   const [done, setDone] = useState(false);
+
+  const base =
+    done
+      ? "border border-[color-mix(in_srgb,var(--color-mint)_40%,var(--border))] bg-[color-mix(in_srgb,var(--color-mint)_12%,white)] text-[var(--color-mint)]"
+      : variant === "primary"
+        ? "btn-primary"
+        : variant === "ghost"
+          ? "btn-ghost"
+          : variant === "dark"
+            ? "btn-dark"
+            : "btn-secondary";
 
   return (
     <button
       type="button"
-      className={`btn ${
-        done
-          ? "border border-[color:var(--color-sage)] bg-[color-mix(in_srgb,var(--color-sage)_18%,transparent)] text-[color:var(--color-sage)]"
-          : variant === "primary"
-            ? "btn-primary"
-            : variant === "ghost"
-              ? "btn-ghost"
-              : "btn-secondary"
-      }`}
+      className={`btn ${base}`}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(text);

@@ -9,7 +9,7 @@ export type IconStyle = {
 
 export const DEFAULT_STYLE: IconStyle = {
   size: 48,
-  color: "#f4efe4",
+  color: "#e8eef8",
   strokeWidth: 2,
   rotate: 0,
 };

@@ -1,30 +1,29 @@
 import type { Metadata } from "next";
-import { DM_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
+import { IBM_Plex_Mono, Source_Sans_3, Syne } from "next/font/google";
 import "./globals.css";
 
-const body = DM_Sans({
+const body = Source_Sans_3({
   subsets: ["latin"],
   variable: "--font-body",
   display: "swap",
 });
 
-const display = Instrument_Serif({
+const display = Syne({
   subsets: ["latin"],
-  weight: "400",
   variable: "--font-display",
   display: "swap",
 });
 
-const code = JetBrains_Mono({
+const code = IBM_Plex_Mono({
   subsets: ["latin"],
+  weight: ["400", "500"],
   variable: "--font-code",
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Icon Playground",
-  description:
-    "Foundry-style icon playground — preview, style, and export SVG/PNG.",
+  description: "Style, preview, and export icons — SVG and PNG.",
   robots: { index: false, follow: false },
 };
 
