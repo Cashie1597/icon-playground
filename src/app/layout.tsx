@@ -22,9 +22,9 @@ const code = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Icon Playground · Recto",
+  title: "Icon Playground",
   description:
-    "Foundry-style playground for the Recto icon set — preview, style, and export SVG/PNG.",
+    "Foundry-style icon playground — preview, style, and export SVG/PNG.",
   robots: { index: false, follow: false },
 };
 

@@ -1,6 +1,6 @@
 # Icon Playground
 
-Canonical, editable icon playground for the **Recto** icon set. Browse icons with live style controls, edit raw SVG, and copy/export.
+Canonical, editable icon playground. Browse icons with live style controls, edit raw SVG, and copy/export.
 
 **Live:** [icon-playground.vercel.app](https://icon-playground.vercel.app)
 
@@ -12,11 +12,11 @@ Canonical, editable icon playground for the **Recto** icon set. Browse icons wit
 npm run icons        # regenerate the manifest (auto-runs before dev/build)
 ```
 
-Optional re-seed from a Recto HTML sheet (path is an argument — nothing machine-specific):
+Optional re-seed from an HTML icon sheet (path is an argument — nothing machine-specific):
 
 ```bash
 node scripts/extract-recto.mjs /path/to/icon-options.html
-# or: RECTO_HTML=../recto/icon-options.html node scripts/extract-recto.mjs
+# or: RECTO_HTML=/path/to/icon-options.html node scripts/extract-recto.mjs
 ```
 
 ## Develop

@@ -165,11 +165,14 @@ export function Playground({ icons }: { icons: IconDef[] }) {
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface)]"
               aria-hidden
             >
-              <span className="font-display text-xl leading-none text-[var(--color-copper)]">R</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-[var(--color-copper)]">
+                <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.75" />
+                <path d="M9 12h6M12 9v6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+              </svg>
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="label-caps">Recto foundry</p>
+                <p className="label-caps">Icon foundry</p>
                 <span className="chip mono">{icons.length} glyphs</span>
               </div>
               <h1 className="font-display truncate text-2xl text-[var(--fg)] sm:text-3xl">
