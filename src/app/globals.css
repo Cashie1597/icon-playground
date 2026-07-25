@@ -489,6 +489,35 @@ input[type="color"]::-webkit-color-swatch {
   background-clip: content-box;
 }
 
+/* Smooth, natural entrances for panels that mount/unmount.
+   Uses an easeOutQuint-style curve so motion settles instead of snapping. */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bar-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes help-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes preview-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.detail-in { animation: panel-in 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+.compare-bar > .panel { animation: bar-in 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+.help-overlay { animation: help-in 180ms ease-out; }
+.help-card { animation: panel-in 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.preview-pop { animation: preview-pop 300ms cubic-bezier(0.22, 1, 0.36, 1); transform-origin: center; }
+.star-btn { transition: color 140ms ease, background-color 140ms ease, transform 120ms ease; }
+
+/* Gentle theme crossfade */
+html { transition: color 220ms ease; }
+body { transition: color 220ms ease; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

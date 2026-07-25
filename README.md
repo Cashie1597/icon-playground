@@ -39,13 +39,3 @@ vercel --prod        # CLI deploy
 ```
 
 Optional protection (Vercel → Project → Settings → Deployment Protection): team SSO or password. Metadata sets `robots: noindex` as a crawl backstop.
-
-## Local private tunnel (optional)
-
-```bash
-cp .ngrok-auth.example .ngrok-auth   # edit user:pass
-./serve.sh --build
-./stop.sh
-```
-
-Credentials stay in `.ngrok-auth` (gitignored) or `NGROK_BASIC_AUTH`. Never commit real passwords.

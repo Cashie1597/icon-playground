@@ -1,3 +1,0 @@
-# Copy to .ngrok-auth (gitignored) and replace with your own credentials.
-# Format: user:password  (single line, no quotes)
-user:change-me

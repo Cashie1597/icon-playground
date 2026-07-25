@@ -37,7 +37,7 @@ export function IconRender({
       opacity={style.opacity < 0.999 ? style.opacity : undefined}
       style={{
         transform: transforms.length ? transforms.join(" ") : undefined,
-        transition: "transform 160ms ease, opacity 160ms ease",
+        transition: "transform 160ms ease, opacity 160ms ease, color 160ms ease",
       }}
       {...strokeProps}
       dangerouslySetInnerHTML={{ __html: icon.body }}

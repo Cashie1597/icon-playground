@@ -28,12 +28,5 @@ npm-debug.log*
 # vercel
 .vercel
 
-# ngrok secrets / local link config
-.ngrok-auth
-.ngrok-domain
-.serve.pid
-.serve-server.log
-.serve-ngrok.log
-
 # typescript
 *.tsbuildinfo

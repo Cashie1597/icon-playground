@@ -1247,7 +1247,7 @@ function DetailPanel({
   const code = exportFmt === "svg" ? svg : exportFmt === "jsx" ? jsx : css;
 
   return (
-    <aside className="panel flex h-fit flex-col gap-4 p-4 lg:sticky lg:top-3" aria-label="Icon detail">
+    <aside className="panel detail-in flex h-fit flex-col gap-4 p-4 lg:sticky lg:top-3" aria-label="Icon detail">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="label-caps">Selected</p>
@@ -1269,7 +1269,9 @@ function DetailPanel({
       </div>
 
       <div className={`flex items-center justify-center rounded-xl p-10 ${BG_CLASS[bg]}`}>
-        <IconRender icon={icon} style={style} size={140} />
+        <span key={icon.slug} className="preview-pop flex items-center justify-center">
+          <IconRender icon={icon} style={style} size={140} />
+        </span>
       </div>
 
       <div>
