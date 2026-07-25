@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import type { IconDef } from "@/icons.generated";
 import { DEFAULT_STYLE, type IconStyle, toSvg, toJsx } from "@/lib/render";
 import { IconRender } from "./IconRender";
@@ -8,18 +16,28 @@ import { CopyButton } from "./CopyButton";
 
 type Bg = "dark" | "light" | "checker";
 type Tab = "library" | "editor";
+type ExportFmt = "svg" | "jsx";
+type Density = "comfortable" | "compact";
 
 const BG_CLASS: Record<Bg, string> = {
-  dark: "bg-[#0c0717]",
-  light: "bg-white",
-  checker: "checker bg-[#140c26]",
+  dark: "preview-dark",
+  light: "preview-light",
+  checker: "preview-checker",
 };
 
-const GRAD_BTN =
-  "rounded-lg bg-gradient-to-r from-violet-500 via-fuchsia-500 to-sky-500 bg-[length:200%_200%] animate-gradient px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-fuchsia-500/20 hover:brightness-110 active:scale-95 transition disabled:opacity-40 disabled:active:scale-100";
+const COLOR_SWATCHES = [
+  "#f4efe4",
+  "#d06a2b",
+  "#5f8f6a",
+  "#c4b8a0",
+  "#8ec8e8",
+  "#1a1712",
+  "#ffffff",
+  "#e8e1d2",
+] as const;
 
-function download(filename: string, text: string) {
-  const blob = new Blob([text], { type: "image/svg+xml" });
+function download(filename: string, text: string, mime = "image/svg+xml") {
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -28,8 +46,6 @@ function download(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-// Rasterize an SVG string to a PNG at `size` px and download it. Browser-only,
-// no dependencies — draws the SVG onto a canvas via an Image.
 async function downloadPng(filename: string, svg: string, size = 512) {
   const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
@@ -59,12 +75,23 @@ async function downloadPng(filename: string, svg: string, size = 512) {
   }
 }
 
+function SearchIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.75" />
+      <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function Playground({ icons }: { icons: IconDef[] }) {
   const [tab, setTab] = useState<Tab>("library");
   const [style, setStyle] = useState<IconStyle>(DEFAULT_STYLE);
   const [bg, setBg] = useState<Bg>("dark");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<IconDef | null>(icons[0] ?? null);
+  const [density, setDensity] = useState<Density>("comfortable");
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -72,84 +99,198 @@ export function Playground({ icons }: { icons: IconDef[] }) {
     return icons.filter((i) => i.slug.includes(q) || i.name.toLowerCase().includes(q));
   }, [icons, query]);
 
+  const selectedIndex = useMemo(() => {
+    if (!selected) return -1;
+    return filtered.findIndex((i) => i.slug === selected.slug);
+  }, [filtered, selected]);
+
+  const selectByOffset = useCallback(
+    (delta: number) => {
+      if (filtered.length === 0) return;
+      const base = selectedIndex < 0 ? 0 : selectedIndex;
+      const next = (base + delta + filtered.length) % filtered.length;
+      setSelected(filtered[next]);
+    },
+    [filtered, selectedIndex],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      if (e.key === "/" && !typing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (typing || tab !== "library") return;
+      if (e.key === "ArrowRight" || e.key === "j") {
+        e.preventDefault();
+        selectByOffset(1);
+      } else if (e.key === "ArrowLeft" || e.key === "k") {
+        e.preventDefault();
+        selectByOffset(-1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectByOffset, tab]);
+
+  // Keep selection valid when filter changes
+  useEffect(() => {
+    if (filtered.length === 0) return;
+    if (!selected || !filtered.some((i) => i.slug === selected.slug)) {
+      setSelected(filtered[0]);
+    }
+  }, [filtered, selected]);
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full glass px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-violet-200/80">
-            <span className="h-2 w-2 rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400 animate-gradient bg-[length:200%_200%]" />
-            Recto icon set
-          </div>
-          <h1 className="text-4xl font-black tracking-tight text-gradient sm:text-5xl">
-            Icon Playground
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-violet-200/60">
-            Canonical set ·{" "}
-            <span className="font-semibold text-violet-100">{icons.length} icons</span> · edit,
-            preview &amp; export
-          </p>
-        </div>
-        <nav className="flex rounded-xl glass p-1 text-sm" aria-label="View">
-          {(["library", "editor"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`rounded-lg px-4 py-2 font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-400 ${
-                tab === t
-                  ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30"
-                  : "text-violet-200/60 hover:text-violet-100"
-              }`}
+    <div className="mx-auto flex min-h-screen max-w-[1440px] flex-col px-4 pb-10 pt-0 sm:px-6 lg:px-8">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-[var(--color-copper)] focus:px-3 focus:py-2 focus:text-[var(--accent-fg)]"
+      >
+        Skip to content
+      </a>
+
+      {/* Top bar */}
+      <header className="sticky top-0 z-40 -mx-4 mb-6 border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--color-ink)_92%,transparent)] px-4 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 py-4">
+          <div className="flex min-w-0 items-center gap-4">
+            <div
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface)]"
+              aria-hidden
             >
-              {t === "library" ? "Library" : "SVG Editor"}
-            </button>
-          ))}
-        </nav>
+              <span className="font-display text-xl leading-none text-[var(--color-copper)]">R</span>
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="label-caps">Recto foundry</p>
+                <span className="chip mono">{icons.length} glyphs</span>
+              </div>
+              <h1 className="font-display truncate text-2xl text-[var(--fg)] sm:text-3xl">
+                Icon Playground
+              </h1>
+            </div>
+          </div>
+
+          <nav className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1" aria-label="View">
+            {(
+              [
+                { id: "library" as const, label: "Library" },
+                { id: "editor" as const, label: "SVG Editor" },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                aria-current={tab === item.id ? "page" : undefined}
+                className={`rounded-md px-3.5 py-2 text-sm font-semibold transition-colors ${
+                  tab === item.id
+                    ? "bg-[var(--color-copper)] text-[var(--accent-fg)]"
+                    : "text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </div>
       </header>
 
-      {tab === "library" ? (
-        <LibraryView
-          icons={filtered}
-          total={icons.length}
-          style={style}
-          setStyle={setStyle}
-          bg={bg}
-          setBg={setBg}
-          query={query}
-          setQuery={setQuery}
-          selected={selected}
-          setSelected={setSelected}
-        />
-      ) : (
-        <EditorView bg={bg} setBg={setBg} />
-      )}
+      <main id="main-content" className="flex-1">
+        {tab === "library" ? (
+          <LibraryView
+            icons={filtered}
+            total={icons.length}
+            style={style}
+            setStyle={setStyle}
+            bg={bg}
+            setBg={setBg}
+            query={query}
+            setQuery={setQuery}
+            selected={selected}
+            setSelected={setSelected}
+            density={density}
+            setDensity={setDensity}
+            searchRef={searchRef}
+            selectedIndex={selectedIndex}
+          />
+        ) : (
+          <EditorView bg={bg} setBg={setBg} />
+        )}
+      </main>
+
+      <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-5 text-xs text-[var(--muted)]">
+        <p>
+          Canonical source <span className="mono text-[var(--fg)]">icons/</span> · rebuild with{" "}
+          <span className="mono">npm run icons</span>
+        </p>
+        <p className="mono">
+          / search · ← → browse
+        </p>
+      </footer>
     </div>
+  );
+}
+
+function ControlField({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex min-w-[9rem] flex-1 flex-col gap-1.5">
+      <span className="flex items-center justify-between gap-2">
+        <span className="label-caps">{label}</span>
+        {value != null && <span className="mono text-xs text-[var(--fg)]">{value}</span>}
+      </span>
+      {children}
+    </label>
   );
 }
 
 function BgToggle({ bg, setBg }: { bg: Bg; setBg: (b: Bg) => void }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-violet-200/50">BG</span>
-      {(["dark", "light", "checker"] as Bg[]).map((b) => (
-        <button
-          key={b}
-          type="button"
-          onClick={() => setBg(b)}
-          className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-400 ${
-            bg === b
-              ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white"
-              : "bg-white/5 text-violet-200/60 hover:bg-white/10 hover:text-violet-100"
-          }`}
-        >
-          {b}
-        </button>
-      ))}
+    <div className="flex flex-col gap-1.5">
+      <span className="label-caps">Canvas</span>
+      <div className="flex gap-1" role="group" aria-label="Preview background">
+        {(
+          [
+            { id: "dark" as const, label: "Ink" },
+            { id: "light" as const, label: "Paper" },
+            { id: "checker" as const, label: "Grid" },
+          ] as const
+        ).map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => setBg(b.id)}
+            aria-pressed={bg === b.id}
+            className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+              bg === b.id
+                ? "bg-[var(--surface-2)] text-[var(--fg)] ring-1 ring-[var(--color-copper)]"
+                : "text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
+            }`}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-function Controls({
+function StyleRail({
   style,
   setStyle,
   bg,
@@ -161,58 +302,84 @@ function Controls({
   setBg: (b: Bg) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl glass px-5 py-4 text-sm">
-      <label className="flex items-center gap-2">
-        <span className="text-violet-200/50">Size</span>
-        <input
-          type="range"
-          min={16}
-          max={128}
-          value={style.size}
-          onChange={(e) => setStyle({ ...style, size: +e.target.value })}
-        />
-        <span className="w-9 tabular-nums text-violet-100">{style.size}</span>
-      </label>
-      <label className="flex items-center gap-2">
-        <span className="text-violet-200/50">Color</span>
-        <input
-          type="color"
-          value={style.color}
-          onChange={(e) => setStyle({ ...style, color: e.target.value })}
-          className="h-7 w-9 cursor-pointer rounded-md border border-white/10 bg-transparent"
-        />
-      </label>
-      <label className="flex items-center gap-2">
-        <span className="text-violet-200/50">Stroke</span>
-        <input
-          type="range"
-          min={0.5}
-          max={4}
-          step={0.5}
-          value={style.strokeWidth}
-          onChange={(e) => setStyle({ ...style, strokeWidth: +e.target.value })}
-        />
-        <span className="w-7 tabular-nums text-violet-100">{style.strokeWidth}</span>
-      </label>
-      <label className="flex items-center gap-2">
-        <span className="text-violet-200/50">Rotate</span>
-        <input
-          type="range"
-          min={0}
-          max={360}
-          value={style.rotate}
-          onChange={(e) => setStyle({ ...style, rotate: +e.target.value })}
-        />
-        <span className="w-9 tabular-nums text-violet-100">{style.rotate}°</span>
-      </label>
-      <BgToggle bg={bg} setBg={setBg} />
-      <button
-        onClick={() => setStyle(DEFAULT_STYLE)}
-        className="ml-auto rounded-lg border border-white/10 px-3 py-1.5 text-xs text-violet-200/60 hover:border-white/20 hover:text-violet-100"
-      >
-        Reset
-      </button>
-    </div>
+    <section className="surface p-4 sm:p-5" aria-label="Style controls">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="label-caps">Specimen controls</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Size, stroke, rotation, and ink color for the whole set.</p>
+        </div>
+        <button type="button" className="btn btn-ghost" onClick={() => setStyle(DEFAULT_STYLE)}>
+          Reset style
+        </button>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <ControlField label="Size" value={`${style.size}px`}>
+          <input
+            type="range"
+            min={16}
+            max={128}
+            value={style.size}
+            onChange={(e) => setStyle({ ...style, size: +e.target.value })}
+            aria-label="Icon size"
+          />
+        </ControlField>
+        <ControlField label="Stroke" value={`${style.strokeWidth}`}>
+          <input
+            type="range"
+            min={0.5}
+            max={4}
+            step={0.5}
+            value={style.strokeWidth}
+            onChange={(e) => setStyle({ ...style, strokeWidth: +e.target.value })}
+            aria-label="Stroke width"
+          />
+        </ControlField>
+        <ControlField label="Rotate" value={`${style.rotate}°`}>
+          <input
+            type="range"
+            min={0}
+            max={360}
+            value={style.rotate}
+            onChange={(e) => setStyle({ ...style, rotate: +e.target.value })}
+            aria-label="Rotation"
+          />
+        </ControlField>
+        <BgToggle bg={bg} setBg={setBg} />
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-4">
+        <span className="label-caps">Ink</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {COLOR_SWATCHES.map((c) => {
+            const active = style.color.toLowerCase() === c.toLowerCase();
+            return (
+              <button
+                key={c}
+                type="button"
+                title={c}
+                aria-label={`Set color ${c}`}
+                aria-pressed={active}
+                onClick={() => setStyle({ ...style, color: c })}
+                className="h-7 w-7 rounded-full border border-[var(--border)] transition-transform hover:scale-105"
+                style={{
+                  background: c,
+                  boxShadow: active ? `0 0 0 2px var(--color-ink), 0 0 0 4px var(--color-copper)` : undefined,
+                }}
+              />
+            );
+          })}
+          <input
+            type="color"
+            value={style.color}
+            onChange={(e) => setStyle({ ...style, color: e.target.value })}
+            className="h-8 w-10"
+            aria-label="Custom color"
+          />
+          <span className="mono text-xs text-[var(--muted)]">{style.color}</span>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -227,6 +394,10 @@ function LibraryView({
   setQuery,
   selected,
   setSelected,
+  density,
+  setDensity,
+  searchRef,
+  selectedIndex,
 }: {
   icons: IconDef[];
   total: number;
@@ -238,97 +409,212 @@ function LibraryView({
   setQuery: (q: string) => void;
   selected: IconDef | null;
   setSelected: (i: IconDef) => void;
+  density: Density;
+  setDensity: (d: Density) => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+  selectedIndex: number;
 }) {
+  const minTile = density === "compact" ? 88 : 112;
+
   return (
-    <div className="space-y-5">
-      <Controls style={style} setStyle={setStyle} bg={bg} setBg={setBg} />
-      <input
-        type="search"
-        placeholder={`Search ${total} icons…`}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="w-full rounded-xl glass px-4 py-3 text-sm text-violet-50 placeholder:text-violet-200/40 outline-none focus:glow"
-      />
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_380px]">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
-          {icons.map((icon) => {
-            const active = selected?.slug === icon.slug;
-            return (
-              <button
-                key={icon.slug}
-                onClick={() => setSelected(icon)}
-                title={icon.name}
-                className={`group flex flex-col items-center gap-2 rounded-2xl p-3 transition duration-200 hover:-translate-y-1 ${
-                  active ? "glass glow" : "glass hover:border-white/20"
-                }`}
-              >
-                <div
-                  className={`flex h-20 w-full items-center justify-center rounded-xl ${BG_CLASS[bg]} transition group-hover:scale-[1.03]`}
-                >
-                  <IconRender icon={icon} style={style} size={Math.min(style.size, 72)} />
-                </div>
-                <span
-                  className={`w-full truncate text-center text-xs transition ${
-                    active ? "font-semibold text-violet-100" : "text-violet-200/50 group-hover:text-violet-100"
-                  }`}
-                >
-                  {icon.name}
-                </span>
+    <div className="flex flex-col gap-5">
+      <StyleRail style={style} setStyle={setStyle} bg={bg} setBg={setBg} />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+          <input
+            ref={searchRef}
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${total} icons…`}
+            aria-label="Search icons"
+            className="field pl-10"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="label-caps hidden sm:inline">Density</span>
+          {(
+            [
+              { id: "comfortable" as const, label: "Roomy" },
+              { id: "compact" as const, label: "Dense" },
+            ] as const
+          ).map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => setDensity(d.id)}
+              aria-pressed={density === d.id}
+              className={`btn ${density === d.id ? "btn-secondary" : "btn-ghost"} !min-h-9 !px-3`}
+            >
+              {d.label}
+            </button>
+          ))}
+          <span className="mono ml-1 text-xs text-[var(--muted)]">
+            {icons.length}/{total}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section aria-label="Icon grid">
+          {icons.length === 0 ? (
+            <div className="surface flex flex-col items-center justify-center gap-3 px-6 py-20 text-center">
+              <p className="font-display text-2xl text-[var(--fg)]">No glyphs match</p>
+              <p className="max-w-sm text-sm text-[var(--muted)]">
+                Clear the search or try a slug fragment like <span className="mono">bookmark</span>.
+              </p>
+              <button type="button" className="btn btn-secondary" onClick={() => setQuery("")}>
+                Clear search
               </button>
-            );
-          })}
-          {icons.length === 0 && (
-            <div className="col-span-full flex flex-col items-center gap-2 py-16 text-center">
-              <span className="text-3xl">🔍</span>
-              <p className="text-sm text-violet-200/50">No icons match that search.</p>
+            </div>
+          ) : (
+            <div
+              className="grid gap-2.5"
+              style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${minTile}px, 1fr))` }}
+            >
+              {icons.map((icon, idx) => {
+                const active = selected?.slug === icon.slug;
+                return (
+                  <button
+                    key={icon.slug}
+                    type="button"
+                    onClick={() => setSelected(icon)}
+                    data-active={active}
+                    className="icon-tile surface flex flex-col items-stretch gap-2 p-2.5 text-left"
+                    aria-current={active ? "true" : undefined}
+                    aria-label={`${icon.name}${active ? ", selected" : ""}`}
+                  >
+                    <div
+                      className={`flex aspect-square items-center justify-center rounded-[calc(var(--radius)-2px)] ${BG_CLASS[bg]}`}
+                    >
+                      <IconRender icon={icon} style={style} size={Math.min(style.size, density === "compact" ? 40 : 56)} />
+                    </div>
+                    <div className="flex items-start justify-between gap-1 px-0.5">
+                      <span
+                        className={`truncate text-xs ${
+                          active ? "font-semibold text-[var(--fg)]" : "text-[var(--muted)]"
+                        }`}
+                      >
+                        {icon.name}
+                      </span>
+                      <span className="mono shrink-0 text-[10px] text-[var(--muted)] opacity-60">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
-        </div>
-        {selected && <DetailPanel icon={selected} style={style} bg={bg} />}
+        </section>
+
+        {selected && (
+          <DetailPanel
+            icon={selected}
+            style={style}
+            bg={bg}
+            indexLabel={
+              selectedIndex >= 0
+                ? `${String(selectedIndex + 1).padStart(2, "0")} / ${String(icons.length).padStart(2, "0")}`
+                : undefined
+            }
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function DetailPanel({ icon, style, bg }: { icon: IconDef; style: IconStyle; bg: Bg }) {
+function DetailPanel({
+  icon,
+  style,
+  bg,
+  indexLabel,
+}: {
+  icon: IconDef;
+  style: IconStyle;
+  bg: Bg;
+  indexLabel?: string;
+}) {
+  const [exportFmt, setExportFmt] = useState<ExportFmt>("svg");
   const svg = toSvg(icon, style);
   const jsx = toJsx(icon);
   const sizes = [16, 24, 32, 48, 64, 96];
+  const code = exportFmt === "svg" ? svg : jsx;
+
   return (
-    <aside className="h-fit space-y-4 rounded-2xl glass p-5">
+    <aside className="surface sticky top-[5.5rem] flex h-fit flex-col gap-4 p-4 sm:p-5" aria-label="Icon detail">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="label-caps">Selected glyph</p>
+          <h2 className="font-display mt-1 truncate text-2xl text-[var(--fg)]">{icon.name}</h2>
+          <p className="mono mt-0.5 text-xs text-[var(--color-copper)]">{icon.slug}</p>
+        </div>
+        {indexLabel && <span className="chip mono shrink-0">{indexLabel}</span>}
+      </div>
+
+      <div className={`flex items-center justify-center rounded-lg p-10 ${BG_CLASS[bg]}`}>
+        <IconRender icon={icon} style={style} size={136} />
+      </div>
+
       <div>
-        <h2 className="text-lg font-bold text-violet-50">{icon.name}</h2>
-        <p className="font-mono text-xs text-fuchsia-300/70">{icon.slug}</p>
+        <p className="label-caps mb-2">Scale strip</p>
+        <div className={`flex items-end justify-between gap-1 rounded-lg p-3 ${BG_CLASS[bg]}`}>
+          {sizes.map((s) => (
+            <div key={s} className="flex flex-col items-center gap-1.5">
+              <IconRender icon={icon} style={style} size={s} />
+              <span className="mono text-[10px] text-[var(--muted)]">{s}</span>
+            </div>
+          ))}
+        </div>
       </div>
-      <div
-        className={`flex items-center justify-center rounded-xl p-8 ${BG_CLASS[bg]} ring-1 ring-white/5`}
-      >
-        <IconRender icon={icon} style={style} size={128} />
-      </div>
-      <div className={`flex items-end justify-between gap-2 rounded-xl p-3 ${BG_CLASS[bg]} ring-1 ring-white/5`}>
-        {sizes.map((s) => (
-          <div key={s} className="flex flex-col items-center gap-1">
-            <IconRender icon={icon} style={style} size={s} />
-            <span className="text-[10px] text-violet-200/40">{s}</span>
-          </div>
-        ))}
-      </div>
+
       <div className="flex flex-wrap gap-2">
-        <CopyButton text={svg} label="Copy SVG" />
+        <CopyButton text={svg} label="Copy SVG" variant="primary" />
         <CopyButton text={jsx} label="Copy JSX" />
-        <button onClick={() => download(`${icon.slug}.svg`, svg)} className={GRAD_BTN}>
-          Download .svg
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => download(`${icon.slug}.svg`, svg)}
+        >
+          Download SVG
         </button>
         <button
+          type="button"
+          className="btn btn-secondary"
           onClick={() => downloadPng(`${icon.slug}.png`, toSvg(icon, { ...style, size: 512 }), 512)}
-          className={GRAD_BTN}
         >
-          Download .png
+          Download PNG
         </button>
       </div>
-      <pre className="max-h-48 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 text-[11px] leading-relaxed text-violet-200/70">
-        {svg}
-      </pre>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="label-caps">Export markup</p>
+          <div className="flex gap-1" role="group" aria-label="Export format">
+            {(["svg", "jsx"] as ExportFmt[]).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setExportFmt(f)}
+                aria-pressed={exportFmt === f}
+                className={`rounded px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                  exportFmt === f
+                    ? "bg-[var(--surface-2)] text-[var(--fg)]"
+                    : "text-[var(--muted)] hover:text-[var(--fg)]"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+        <pre className="surface-inset max-h-44 overflow-auto p-3 font-mono text-[11px] leading-relaxed text-[var(--muted)]">
+          {code}
+        </pre>
+      </div>
     </aside>
   );
 }
@@ -342,38 +628,67 @@ const SAMPLE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
 function EditorView({ bg, setBg }: { bg: Bg; setBg: (b: Bg) => void }) {
   const [code, setCode] = useState(SAMPLE);
   const valid = /<svg[\s\S]*<\/svg>/i.test(code);
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3 rounded-2xl glass px-5 py-3 text-sm">
+    <div className="flex flex-col gap-5">
+      <section className="surface flex flex-wrap items-center gap-4 p-4 sm:p-5">
+        <div className="min-w-0 flex-1">
+          <p className="label-caps">Raw SVG editor</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Paste markup for a live preview. Export stays local — nothing is uploaded.
+          </p>
+        </div>
         <BgToggle bg={bg} setBg={setBg} />
-        <span className={`ml-auto text-xs font-medium ${valid ? "text-emerald-300" : "text-rose-300"}`}>
-          {valid ? "● valid SVG" : "● waiting for valid SVG"}
+        <span
+          className={`chip ${
+            valid
+              ? "!border-[color-mix(in_srgb,var(--color-sage)_40%,var(--border))] !text-[var(--color-sage)]"
+              : "!border-[color-mix(in_srgb,var(--color-danger)_40%,var(--border))] !text-[var(--color-danger)]"
+          }`}
+        >
+          {valid ? "Valid SVG" : "Waiting for SVG"}
         </span>
-      </div>
+      </section>
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <textarea
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          spellCheck={false}
-          className="h-[480px] w-full resize-none rounded-2xl glass p-4 font-mono text-xs leading-relaxed text-violet-50 outline-none focus:glow"
-        />
-        <div className="space-y-3">
+        <label className="flex flex-col gap-2">
+          <span className="label-caps">Source</span>
+          <textarea
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            spellCheck={false}
+            aria-label="SVG source"
+            className="surface field h-[min(520px,70vh)] resize-none p-4 font-mono text-xs leading-relaxed"
+          />
+        </label>
+
+        <div className="flex flex-col gap-3">
+          <span className="label-caps">Preview</span>
           <div
-            className={`flex h-[400px] items-center justify-center rounded-2xl ${BG_CLASS[bg]} ring-1 ring-white/10`}
-            dangerouslySetInnerHTML={valid ? { __html: code } : undefined}
+            className={`flex min-h-[320px] flex-1 items-center justify-center rounded-[calc(var(--radius)+2px)] border border-[var(--border)] p-8 ${BG_CLASS[bg]}`}
           >
-            {!valid ? <span className="text-sm text-violet-200/40">Paste valid SVG markup…</span> : null}
+            {valid ? (
+              // Local editor markup only — not remote content
+              <div
+                className="flex max-h-full max-w-full items-center justify-center [&>svg]:max-h-[280px] [&>svg]:max-w-full"
+                dangerouslySetInnerHTML={{ __html: code }}
+              />
+            ) : (
+              <p className="text-sm text-[var(--muted)]">Paste a complete &lt;svg&gt;…&lt;/svg&gt; block.</p>
+            )}
           </div>
-          <div className="flex gap-2">
-            <CopyButton text={code} label="Copy SVG" />
-            <button onClick={() => download("icon.svg", code)} disabled={!valid} className={GRAD_BTN}>
-              Download .svg
-            </button>
+          <div className="flex flex-wrap gap-2">
+            <CopyButton text={code} label="Copy SVG" variant="primary" />
             <button
-              onClick={() => setCode(SAMPLE)}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-violet-200/60 hover:border-white/20 hover:text-violet-100"
+              type="button"
+              className="btn btn-secondary"
+              disabled={!valid}
+              onClick={() => download("icon.svg", code)}
             >
-              Reset
+              Download SVG
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setCode(SAMPLE)}>
+              Reset sample
             </button>
           </div>
         </div>
