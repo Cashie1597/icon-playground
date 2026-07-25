@@ -19,18 +19,18 @@ const candidates = [
 ].filter(Boolean);
 
 const NAMES = {
-  ic1: "01-turning-recto-page",
+  ic1: "01-turning-page",
   ic2: "02-clean-open-book",
   ic3: "03-monogram-r",
   ic4: "04-markdown-page",
-  ic5: "05-recto-verso-duotone",
+  ic5: "05-page-duotone",
   ic6: "06-folded-corner-page",
   ic7: "07-markdown-mark",
   ic8: "08-stacked-sheets",
   ic9: "09-bookmark-ribbon",
   ic10: "10-pilcrow",
   ic11: "11-outline-open-book",
-  ic12: "12-right-tab-recto",
+  ic12: "12-right-tab",
 };
 
 async function resolveSrc() {

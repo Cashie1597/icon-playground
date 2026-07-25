@@ -4,9 +4,9 @@
       <linearGradient id="r5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE9A8"/><stop offset="1" stop-color="#FFC24B"/></linearGradient>
     </defs>
     <rect width="1024" height="1024" fill="url(#t5)"/>
-    <!-- verso (muted) -->
+    <!-- muted page -->
     <path d="M512 372 L292 400 V 692 L512 720 Z" fill="#5A6480"/>
-    <!-- recto (highlight) -->
+    <!-- highlight page -->
     <path d="M512 372 L732 400 V 692 L512 720 Z" fill="url(#r5)"/>
     <rect x="332" y="452" width="132" height="16" rx="8" fill="#8893AE"/>
     <rect x="332" y="488" width="132" height="16" rx="8" fill="#8893AE"/>

@@ -19,7 +19,4 @@
     <rect x="558" y="600" width="104" height="16" rx="8" fill="#C7CEDF"/>
     <path d="M512 408 C 624 372 718 408 752 470 C 760 486 756 500 742 506 C 706 462 612 442 512 462 Z" fill="url(#l1)"/>
     </g>
-    <text x="512" y="892" text-anchor="middle" dominant-baseline="alphabetic"
-          font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif"
-          font-weight="600" font-size="168" letter-spacing="4" fill="#fff">Recto</text>
 </svg>
