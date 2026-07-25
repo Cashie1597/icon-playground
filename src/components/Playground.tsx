@@ -12,12 +12,15 @@ import {
 import type { IconDef } from "@/icons.generated";
 import {
   DEFAULT_STYLE,
+  STYLE_PRESETS,
   displayName,
   toCssDataUri,
   toJsx,
+  toSprite,
   toSvg,
   type IconStyle,
 } from "@/lib/render";
+import { loadJson, loadStringSet, saveJson, saveStringSet } from "@/lib/storage";
 import { IconRender } from "./IconRender";
 import { CopyButton } from "./CopyButton";
 
@@ -27,6 +30,8 @@ type ExportFmt = "svg" | "jsx" | "css";
 type Density = "comfortable" | "compact";
 type LayoutMode = "grid" | "list";
 type Theme = "light" | "dark";
+type SortMode = "default" | "name" | "favorites";
+type FilterMode = "all" | "favorites";
 
 const BG_CLASS: Record<Bg, string> = {
   dark: "preview-dark",
@@ -45,11 +50,16 @@ const COLOR_SWATCHES = [
   "#ffffff",
 ] as const;
 
-const THEME_KEY = "icon-playground-theme";
-const COMPARE_MAX = 4;
+const PNG_SIZES = [128, 256, 512, 1024] as const;
 
-function download(filename: string, text: string) {
-  const blob = new Blob([text], { type: "image/svg+xml" });
+const THEME_KEY = "icon-playground-theme";
+const FAV_KEY = "icon-playground-favorites";
+const RECENT_KEY = "icon-playground-recent";
+const COMPARE_MAX = 4;
+const RECENT_MAX = 8;
+
+function download(filename: string, text: string, mime = "image/svg+xml") {
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -96,6 +106,19 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden fill={filled ? "currentColor" : "none"}>
+      <path
+        d="M12 3.5l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17.4 6.6 20.3l1-6.1L3.2 9.9l6.1-.9L12 3.5z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function readTheme(): Theme {
   if (typeof window === "undefined") return "light";
   const saved = window.localStorage.getItem(THEME_KEY);
@@ -112,6 +135,8 @@ function slugFromUrl(): string | null {
   }
 }
 
+type Toast = { id: number; message: string };
+
 export function Playground({ icons }: { icons: IconDef[] }) {
   const [tab, setTab] = useState<Tab>("library");
   const [style, setStyle] = useState<IconStyle>(DEFAULT_STYLE);
@@ -126,13 +151,30 @@ export function Playground({ icons }: { icons: IconDef[] }) {
   const [layout, setLayout] = useState<LayoutMode>("grid");
   const [theme, setTheme] = useState<Theme>("light");
   const [compare, setCompare] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
+  const [recent, setRecent] = useState<string[]>([]);
+  const [sort, setSort] = useState<SortMode>("default");
+  const [filter, setFilter] = useState<FilterMode>("all");
+  const [pngSize, setPngSize] = useState<number>(512);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const toastId = useRef(0);
+
+  const pushToast = useCallback((message: string) => {
+    const id = ++toastId.current;
+    setToasts((t) => [...t.slice(-3), { id, message }]);
+    window.setTimeout(() => {
+      setToasts((t) => t.filter((x) => x.id !== id));
+    }, 2200);
+  }, []);
 
   useEffect(() => {
     const t = readTheme();
     setTheme(t);
     document.documentElement.setAttribute("data-theme", t);
+    setFavorites(loadStringSet(FAV_KEY));
+    setRecent(loadJson<string[]>(RECENT_KEY, []));
   }, []);
 
   useEffect(() => {
@@ -145,22 +187,50 @@ export function Playground({ icons }: { icons: IconDef[] }) {
   }, [theme]);
 
   useEffect(() => {
+    saveStringSet(FAV_KEY, favorites);
+  }, [favorites]);
+
+  useEffect(() => {
+    saveJson(RECENT_KEY, recent);
+  }, [recent]);
+
+  useEffect(() => {
     if (!selected || typeof window === "undefined") return;
     const url = new URL(window.location.href);
     url.searchParams.set("icon", selected.slug);
     window.history.replaceState({}, "", url.toString());
+    setRecent((prev) => {
+      const next = [selected.slug, ...prev.filter((s) => s !== selected.slug)].slice(0, RECENT_MAX);
+      return next;
+    });
   }, [selected]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return icons;
-    return icons.filter(
-      (i) =>
-        i.slug.includes(q) ||
-        i.name.toLowerCase().includes(q) ||
-        displayName(i.name).toLowerCase().includes(q),
-    );
-  }, [icons, query]);
+    let list = icons;
+    if (filter === "favorites") {
+      list = list.filter((i) => favorites.has(i.slug));
+    }
+    if (q) {
+      list = list.filter(
+        (i) =>
+          i.slug.includes(q) ||
+          i.name.toLowerCase().includes(q) ||
+          displayName(i.name).toLowerCase().includes(q),
+      );
+    }
+    if (sort === "name") {
+      list = [...list].sort((a, b) => displayName(a.name).localeCompare(displayName(b.name)));
+    } else if (sort === "favorites") {
+      list = [...list].sort((a, b) => {
+        const af = favorites.has(a.slug) ? 0 : 1;
+        const bf = favorites.has(b.slug) ? 0 : 1;
+        if (af !== bf) return af - bf;
+        return displayName(a.name).localeCompare(displayName(b.name));
+      });
+    }
+    return list;
+  }, [icons, query, filter, sort, favorites]);
 
   const selectedIndex = useMemo(() => {
     if (!selected) return -1;
@@ -170,6 +240,11 @@ export function Playground({ icons }: { icons: IconDef[] }) {
   const compareIcons = useMemo(
     () => compare.map((slug) => icons.find((i) => i.slug === slug)).filter(Boolean) as IconDef[],
     [compare, icons],
+  );
+
+  const recentIcons = useMemo(
+    () => recent.map((slug) => icons.find((i) => i.slug === slug)).filter(Boolean) as IconDef[],
+    [recent, icons],
   );
 
   const selectByOffset = useCallback(
@@ -195,6 +270,23 @@ export function Playground({ icons }: { icons: IconDef[] }) {
       return [...prev, slug];
     });
   }, []);
+
+  const toggleFavorite = useCallback(
+    (slug: string) => {
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        if (next.has(slug)) {
+          next.delete(slug);
+          pushToast("Removed from favorites");
+        } else {
+          next.add(slug);
+          pushToast("Added to favorites");
+        }
+        return next;
+      });
+    },
+    [pushToast],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -232,6 +324,9 @@ export function Playground({ icons }: { icons: IconDef[] }) {
       } else if (e.key === "c" && selected && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         toggleCompare(selected.slug);
+      } else if (e.key === "f" && selected && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        toggleFavorite(selected.slug);
       } else if (e.key === "t" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setTheme((th) => (th === "light" ? "dark" : "light"));
@@ -239,7 +334,7 @@ export function Playground({ icons }: { icons: IconDef[] }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pickRandom, selectByOffset, selected, tab, toggleCompare]);
+  }, [pickRandom, selectByOffset, selected, tab, toggleCompare, toggleFavorite]);
 
   useEffect(() => {
     if (filtered.length === 0) return;
@@ -274,10 +369,9 @@ export function Playground({ icons }: { icons: IconDef[] }) {
             <div className="flex flex-wrap items-center gap-2">
               <p className="label-caps">Studio</p>
               <span className="chip mono">{icons.length} icons</span>
+              {favorites.size > 0 && <span className="chip mono">{favorites.size} ★</span>}
             </div>
-            <h1 className="font-display truncate text-xl text-[var(--fg)] sm:text-2xl">
-              Icon Playground
-            </h1>
+            <h1 className="font-display truncate text-xl text-[var(--fg)] sm:text-2xl">Icon Playground</h1>
           </div>
         </div>
 
@@ -300,12 +394,10 @@ export function Playground({ icons }: { icons: IconDef[] }) {
               </button>
             ))}
           </div>
-
           <button
             type="button"
             className="btn btn-secondary !min-h-9 !px-3"
             onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
             title="Toggle theme (T)"
           >
             {theme === "light" ? "Dark" : "Light"}
@@ -314,13 +406,34 @@ export function Playground({ icons }: { icons: IconDef[] }) {
             type="button"
             className="btn btn-ghost !min-h-9 !px-3"
             onClick={() => setHelpOpen(true)}
-            aria-label="Keyboard shortcuts"
             title="Shortcuts (?)"
           >
             ?
           </button>
         </div>
       </header>
+
+      {tab === "library" && recentIcons.length > 0 && (
+        <div className="mb-3 px-1">
+          <p className="label-caps mb-1.5">Recent</p>
+          <div className="recent-rail">
+            {recentIcons.map((icon) => (
+              <button
+                key={icon.slug}
+                type="button"
+                className="recent-chip"
+                data-active={selected?.slug === icon.slug}
+                onClick={() => setSelected(icon)}
+              >
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full ${BG_CLASS[bg]}`}>
+                  <IconRender icon={icon} style={style} size={14} />
+                </span>
+                {displayName(icon.name)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <main id="main-content" className="flex-1">
         {tab === "library" ? (
@@ -344,9 +457,18 @@ export function Playground({ icons }: { icons: IconDef[] }) {
             compare={compare}
             toggleCompare={toggleCompare}
             pickRandom={pickRandom}
+            favorites={favorites}
+            toggleFavorite={toggleFavorite}
+            sort={sort}
+            setSort={setSort}
+            filter={filter}
+            setFilter={setFilter}
+            pngSize={pngSize}
+            setPngSize={setPngSize}
+            pushToast={pushToast}
           />
         ) : (
-          <EditorView bg={bg} setBg={setBg} />
+          <EditorView bg={bg} setBg={setBg} pushToast={pushToast} />
         )}
       </main>
 
@@ -361,14 +483,11 @@ export function Playground({ icons }: { icons: IconDef[] }) {
                   type="button"
                   className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5"
                   onClick={() => setSelected(icon)}
-                  title={displayName(icon.name)}
                 >
                   <span className={`flex h-8 w-8 items-center justify-center rounded-md ${BG_CLASS[bg]}`}>
                     <IconRender icon={icon} style={style} size={20} />
                   </span>
-                  <span className="max-w-[7rem] truncate text-xs font-semibold">
-                    {displayName(icon.name)}
-                  </span>
+                  <span className="max-w-[7rem] truncate text-xs font-semibold">{displayName(icon.name)}</span>
                   <span
                     role="button"
                     tabIndex={0}
@@ -384,13 +503,38 @@ export function Playground({ icons }: { icons: IconDef[] }) {
                         toggleCompare(icon.slug);
                       }
                     }}
-                    aria-label={`Remove ${displayName(icon.name)} from compare`}
+                    aria-label={`Remove ${displayName(icon.name)}`}
                   >
                     ×
                   </span>
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              className="btn btn-secondary !min-h-8 !px-2 !text-xs"
+              onClick={() => {
+                const sprite = toSprite(compareIcons, style);
+                download("icons-sprite.svg", sprite);
+                pushToast("Downloaded sprite SVG");
+              }}
+            >
+              Sprite SVG
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost !min-h-8 !px-2 !text-xs"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(toSprite(compareIcons, style));
+                  pushToast("Sprite copied");
+                } catch {
+                  pushToast("Copy failed");
+                }
+              }}
+            >
+              Copy sprite
+            </button>
             <button type="button" className="btn btn-ghost !min-h-8 !px-2 !text-xs" onClick={() => setCompare([])}>
               Clear
             </button>
@@ -402,10 +546,17 @@ export function Playground({ icons }: { icons: IconDef[] }) {
         <p>
           Source <span className="mono text-[var(--fg)]">icons/</span>
         </p>
-        <p className="mono">/ search · ←→ browse · r random · c compare · t theme · ? help</p>
+        <p className="mono">/ · ←→ · r · c · f · t · ?</p>
       </footer>
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
+      <div className="toast-stack" aria-live="polite">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast">
+            {t.message}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -416,6 +567,7 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
     ["← → or j k", "Browse icons"],
     ["r", "Random icon"],
     ["c", "Toggle compare"],
+    ["f", "Toggle favorite"],
     ["t", "Toggle theme"],
     ["?", "This help"],
     ["Esc", "Close dialog"],
@@ -521,6 +673,11 @@ function ControlsSidebar({
   shown,
   searchRef,
   pickRandom,
+  sort,
+  setSort,
+  filter,
+  setFilter,
+  favCount,
 }: {
   style: IconStyle;
   setStyle: (s: IconStyle) => void;
@@ -536,6 +693,11 @@ function ControlsSidebar({
   shown: number;
   searchRef: RefObject<HTMLInputElement | null>;
   pickRandom: () => void;
+  sort: SortMode;
+  setSort: (s: SortMode) => void;
+  filter: FilterMode;
+  setFilter: (f: FilterMode) => void;
+  favCount: number;
 }) {
   return (
     <aside className="panel flex h-fit flex-col gap-5 p-4 lg:sticky lg:top-3" aria-label="Controls">
@@ -559,16 +721,48 @@ function ControlsSidebar({
             Random
           </button>
         </div>
+        <div className="mt-2 grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
+              filter === "all" ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
+            }`}
+            onClick={() => setFilter("all")}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
+              filter === "favorites" ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
+            }`}
+            onClick={() => setFilter("favorites")}
+          >
+            ★ {favCount}
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-[var(--border)] pt-4">
+        <p className="label-caps mb-2">Presets</p>
+        <div className="flex flex-wrap gap-1.5">
+          {STYLE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--fg)]"
+              onClick={() => setStyle({ ...style, ...p.style })}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="border-t border-[var(--border)] pt-4">
         <div className="mb-3 flex items-center justify-between">
           <p className="label-caps">Style</p>
-          <button
-            type="button"
-            className="btn btn-ghost !min-h-8 !px-2 !text-xs"
-            onClick={() => setStyle(DEFAULT_STYLE)}
-          >
+          <button type="button" className="btn btn-ghost !min-h-8 !px-2 !text-xs" onClick={() => setStyle(DEFAULT_STYLE)}>
             Reset
           </button>
         </div>
@@ -580,7 +774,6 @@ function ControlsSidebar({
               max={128}
               value={style.size}
               onChange={(e) => setStyle({ ...style, size: +e.target.value })}
-              aria-label="Icon size"
             />
           </ControlField>
           <ControlField label="Stroke" value={`${style.strokeWidth}`}>
@@ -591,7 +784,6 @@ function ControlsSidebar({
               step={0.5}
               value={style.strokeWidth}
               onChange={(e) => setStyle({ ...style, strokeWidth: +e.target.value })}
-              aria-label="Stroke width"
             />
           </ControlField>
           <ControlField label="Rotate" value={`${style.rotate}°`}>
@@ -601,10 +793,18 @@ function ControlsSidebar({
               max={360}
               value={style.rotate}
               onChange={(e) => setStyle({ ...style, rotate: +e.target.value })}
-              aria-label="Rotation"
             />
           </ControlField>
-
+          <ControlField label="Opacity" value={`${Math.round(style.opacity * 100)}%`}>
+            <input
+              type="range"
+              min={0.1}
+              max={1}
+              step={0.05}
+              value={style.opacity}
+              onChange={(e) => setStyle({ ...style, opacity: +e.target.value })}
+            />
+          </ControlField>
           <div className="flex flex-col gap-1.5">
             <span className="label-caps">Flip</span>
             <div className="grid grid-cols-2 gap-1">
@@ -612,9 +812,7 @@ function ControlsSidebar({
                 type="button"
                 aria-pressed={style.flipX}
                 className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
-                  style.flipX
-                    ? "bg-[var(--accent)] text-white"
-                    : "bg-[var(--surface-2)] text-[var(--muted)]"
+                  style.flipX ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
                 }`}
                 onClick={() => setStyle({ ...style, flipX: !style.flipX })}
               >
@@ -624,9 +822,7 @@ function ControlsSidebar({
                 type="button"
                 aria-pressed={style.flipY}
                 className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
-                  style.flipY
-                    ? "bg-[var(--accent)] text-white"
-                    : "bg-[var(--surface-2)] text-[var(--muted)]"
+                  style.flipY ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
                 }`}
                 onClick={() => setStyle({ ...style, flipY: !style.flipY })}
               >
@@ -634,7 +830,6 @@ function ControlsSidebar({
               </button>
             </div>
           </div>
-
           <BgToggle bg={bg} setBg={setBg} />
         </div>
       </div>
@@ -652,7 +847,7 @@ function ControlsSidebar({
                 aria-label={`Set color ${c}`}
                 aria-pressed={active}
                 onClick={() => setStyle({ ...style, color: c })}
-                className="h-7 w-7 rounded-full border border-[var(--border)] shadow-sm transition-transform hover:scale-105"
+                className="h-7 w-7 rounded-full border border-[var(--border)] shadow-sm"
                 style={{
                   background: c,
                   boxShadow: active ? `0 0 0 2px var(--surface), 0 0 0 4px var(--accent)` : undefined,
@@ -672,6 +867,28 @@ function ControlsSidebar({
       </div>
 
       <div className="border-t border-[var(--border)] pt-4">
+        <p className="label-caps mb-2">Sort</p>
+        <div className="grid grid-cols-3 gap-1 mb-3">
+          {(
+            [
+              { id: "default" as const, label: "Set" },
+              { id: "name" as const, label: "A–Z" },
+              { id: "favorites" as const, label: "★" },
+            ] as const
+          ).map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setSort(s.id)}
+              aria-pressed={sort === s.id}
+              className={`rounded-lg px-2 py-2 text-xs font-semibold ${
+                sort === s.id ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
         <p className="label-caps mb-2">Layout</p>
         <div className="mb-2 grid grid-cols-2 gap-1">
           {(
@@ -686,9 +903,7 @@ function ControlsSidebar({
               onClick={() => setLayout(d.id)}
               aria-pressed={layout === d.id}
               className={`rounded-lg px-2 py-2 text-xs font-semibold ${
-                layout === d.id
-                  ? "bg-[var(--accent)] text-white"
-                  : "bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--fg)]"
+                layout === d.id ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
               }`}
             >
               {d.label}
@@ -709,9 +924,7 @@ function ControlsSidebar({
                 onClick={() => setDensity(d.id)}
                 aria-pressed={density === d.id}
                 className={`rounded-lg px-2 py-2 text-xs font-semibold ${
-                  density === d.id
-                    ? "bg-[var(--accent)] text-white"
-                    : "bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--fg)]"
+                  density === d.id ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
                 }`}
               >
                 {d.label}
@@ -724,27 +937,7 @@ function ControlsSidebar({
   );
 }
 
-function LibraryView({
-  icons,
-  total,
-  style,
-  setStyle,
-  bg,
-  setBg,
-  query,
-  setQuery,
-  selected,
-  setSelected,
-  density,
-  setDensity,
-  layout,
-  setLayout,
-  searchRef,
-  selectedIndex,
-  compare,
-  toggleCompare,
-  pickRandom,
-}: {
+function LibraryView(props: {
   icons: IconDef[];
   total: number;
   style: IconStyle;
@@ -764,7 +957,47 @@ function LibraryView({
   compare: string[];
   toggleCompare: (slug: string) => void;
   pickRandom: () => void;
+  favorites: Set<string>;
+  toggleFavorite: (slug: string) => void;
+  sort: SortMode;
+  setSort: (s: SortMode) => void;
+  filter: FilterMode;
+  setFilter: (f: FilterMode) => void;
+  pngSize: number;
+  setPngSize: (n: number) => void;
+  pushToast: (m: string) => void;
 }) {
+  const {
+    icons,
+    total,
+    style,
+    setStyle,
+    bg,
+    setBg,
+    query,
+    setQuery,
+    selected,
+    setSelected,
+    density,
+    setDensity,
+    layout,
+    setLayout,
+    searchRef,
+    selectedIndex,
+    compare,
+    toggleCompare,
+    pickRandom,
+    favorites,
+    toggleFavorite,
+    sort,
+    setSort,
+    filter,
+    setFilter,
+    pngSize,
+    setPngSize,
+    pushToast,
+  } = props;
+
   const minTile = density === "compact" ? 92 : 118;
 
   return (
@@ -784,22 +1017,37 @@ function LibraryView({
         shown={icons.length}
         searchRef={searchRef}
         pickRandom={pickRandom}
+        sort={sort}
+        setSort={setSort}
+        filter={filter}
+        setFilter={setFilter}
+        favCount={favorites.size}
       />
 
       <section className="panel min-h-[420px] p-3 sm:p-4" aria-label="Icon collection">
         {icons.length === 0 ? (
           <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="font-display text-2xl">No matches</p>
-            <p className="max-w-xs text-sm text-[var(--muted)]">Try another term, or clear the filter.</p>
-            <button type="button" className="btn btn-secondary" onClick={() => setQuery("")}>
-              Clear search
-            </button>
+            <p className="max-w-xs text-sm text-[var(--muted)]">
+              {filter === "favorites" ? "Star icons to build a favorites set." : "Try another term, or clear the filter."}
+            </p>
+            <div className="flex gap-2">
+              {filter === "favorites" && (
+                <button type="button" className="btn btn-secondary" onClick={() => setFilter("all")}>
+                  Show all
+                </button>
+              )}
+              <button type="button" className="btn btn-secondary" onClick={() => setQuery("")}>
+                Clear search
+              </button>
+            </div>
           </div>
         ) : layout === "list" ? (
           <div className="flex flex-col gap-1">
             {icons.map((icon, idx) => {
               const active = selected?.slug === icon.slug;
               const inCompare = compare.includes(icon.slug);
+              const fav = favorites.has(icon.slug);
               return (
                 <div key={icon.slug} className="flex items-center gap-1">
                   <button
@@ -807,7 +1055,6 @@ function LibraryView({
                     className="list-row flex-1"
                     data-active={active}
                     onClick={() => setSelected(icon)}
-                    aria-current={active ? "true" : undefined}
                   >
                     <span className={`flex h-11 w-11 items-center justify-center rounded-lg ${BG_CLASS[bg]}`}>
                       <IconRender icon={icon} style={style} size={28} />
@@ -820,9 +1067,17 @@ function LibraryView({
                   </button>
                   <button
                     type="button"
+                    className={`btn star-btn !min-h-9 !px-2 ${fav ? "text-[#eab308]" : "btn-ghost"}`}
+                    aria-pressed={fav}
+                    onClick={() => toggleFavorite(icon.slug)}
+                    title="Favorite"
+                  >
+                    <StarIcon filled={fav} />
+                  </button>
+                  <button
+                    type="button"
                     className={`btn !min-h-9 !px-2 !text-xs ${inCompare ? "btn-primary" : "btn-ghost"}`}
                     onClick={() => toggleCompare(icon.slug)}
-                    aria-pressed={inCompare}
                     title="Compare"
                   >
                     +
@@ -839,6 +1094,7 @@ function LibraryView({
             {icons.map((icon, idx) => {
               const active = selected?.slug === icon.slug;
               const inCompare = compare.includes(icon.slug);
+              const fav = favorites.has(icon.slug);
               return (
                 <div key={icon.slug} className="relative">
                   <button
@@ -847,11 +1103,8 @@ function LibraryView({
                     data-active={active}
                     className="icon-tile panel-flush flex w-full flex-col gap-2 p-2 text-left"
                     aria-current={active ? "true" : undefined}
-                    aria-label={`${displayName(icon.name)}${active ? ", selected" : ""}`}
                   >
-                    <div
-                      className={`flex aspect-square items-center justify-center rounded-lg ${BG_CLASS[bg]}`}
-                    >
+                    <div className={`flex aspect-square items-center justify-center rounded-lg ${BG_CLASS[bg]}`}>
                       <IconRender
                         icon={icon}
                         style={style}
@@ -873,14 +1126,26 @@ function LibraryView({
                   </button>
                   <button
                     type="button"
+                    className={`star-btn absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md ${
+                      fav
+                        ? "bg-[color-mix(in_srgb,#eab308_20%,var(--surface))] text-[#eab308]"
+                        : "bg-[color-mix(in_srgb,var(--surface)_85%,transparent)] text-[var(--muted)]"
+                    }`}
+                    onClick={() => toggleFavorite(icon.slug)}
+                    aria-pressed={fav}
+                    title="Favorite"
+                  >
+                    <StarIcon filled={fav} />
+                  </button>
+                  <button
+                    type="button"
                     className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold ${
                       inCompare
                         ? "bg-[var(--accent)] text-white"
-                        : "bg-[color-mix(in_srgb,var(--surface)_85%,transparent)] text-[var(--muted)] hover:text-[var(--fg)]"
+                        : "bg-[color-mix(in_srgb,var(--surface)_85%,transparent)] text-[var(--muted)]"
                     }`}
                     onClick={() => toggleCompare(icon.slug)}
                     aria-pressed={inCompare}
-                    aria-label={inCompare ? "Remove from compare" : "Add to compare"}
                     title="Compare"
                   >
                     +
@@ -900,6 +1165,11 @@ function LibraryView({
           indexLabel={selectedIndex >= 0 ? `${selectedIndex + 1} / ${icons.length}` : undefined}
           inCompare={compare.includes(selected.slug)}
           onToggleCompare={() => toggleCompare(selected.slug)}
+          isFavorite={favorites.has(selected.slug)}
+          onToggleFavorite={() => toggleFavorite(selected.slug)}
+          pngSize={pngSize}
+          setPngSize={setPngSize}
+          pushToast={pushToast}
         />
       )}
     </div>
@@ -913,6 +1183,11 @@ function DetailPanel({
   indexLabel,
   inCompare,
   onToggleCompare,
+  isFavorite,
+  onToggleFavorite,
+  pngSize,
+  setPngSize,
+  pushToast,
 }: {
   icon: IconDef;
   style: IconStyle;
@@ -920,6 +1195,11 @@ function DetailPanel({
   indexLabel?: string;
   inCompare: boolean;
   onToggleCompare: () => void;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+  pngSize: number;
+  setPngSize: (n: number) => void;
+  pushToast: (m: string) => void;
 }) {
   const [exportFmt, setExportFmt] = useState<ExportFmt>("svg");
   const svg = toSvg(icon, style);
@@ -936,7 +1216,18 @@ function DetailPanel({
           <h2 className="font-display mt-1 truncate text-2xl leading-tight">{displayName(icon.name)}</h2>
           <p className="mono mt-1 text-xs text-[var(--accent)]">{icon.slug}</p>
         </div>
-        {indexLabel && <span className="chip mono shrink-0">{indexLabel}</span>}
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className={`btn star-btn !min-h-8 !px-2 ${isFavorite ? "text-[#eab308]" : "btn-ghost"}`}
+            aria-pressed={isFavorite}
+            onClick={onToggleFavorite}
+            title="Favorite (F)"
+          >
+            <StarIcon filled={isFavorite} />
+          </button>
+          {indexLabel && <span className="chip mono">{indexLabel}</span>}
+        </div>
       </div>
 
       <div className={`flex items-center justify-center rounded-xl p-10 ${BG_CLASS[bg]}`}>
@@ -955,19 +1246,48 @@ function DetailPanel({
         </div>
       </div>
 
+      <div>
+        <p className="label-caps mb-2">PNG size</p>
+        <div className="grid grid-cols-4 gap-1">
+          {PNG_SIZES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setPngSize(s)}
+              aria-pressed={pngSize === s}
+              className={`rounded-lg px-1 py-1.5 text-[11px] font-semibold mono ${
+                pngSize === s ? "bg-[var(--accent)] text-white" : "bg-[var(--surface-2)] text-[var(--muted)]"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-2">
         <CopyButton text={svg} label="Copy SVG" variant="primary" />
         <CopyButton text={jsx} label="Copy JSX" />
         <CopyButton text={css} label="Copy CSS" />
-        <button type="button" className="btn btn-secondary" onClick={() => download(`${icon.slug}.svg`, svg)}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => {
+            download(`${icon.slug}.svg`, svg);
+            pushToast("Downloaded SVG");
+          }}
+        >
           SVG file
         </button>
         <button
           type="button"
           className="btn btn-secondary"
-          onClick={() => downloadPng(`${icon.slug}.png`, toSvg(icon, { ...style, size: 512 }), 512)}
+          onClick={() => {
+            downloadPng(`${icon.slug}-${pngSize}.png`, toSvg(icon, { ...style, size: pngSize }), pngSize);
+            pushToast(`Downloaded PNG ${pngSize}px`);
+          }}
         >
-          PNG file
+          PNG {pngSize}
         </button>
         <button
           type="button"
@@ -1010,7 +1330,15 @@ const SAMPLE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
   <path d="M12 3v18M3 12h18"/>
 </svg>`;
 
-function EditorView({ bg, setBg }: { bg: Bg; setBg: (b: Bg) => void }) {
+function EditorView({
+  bg,
+  setBg,
+  pushToast,
+}: {
+  bg: Bg;
+  setBg: (b: Bg) => void;
+  pushToast: (m: string) => void;
+}) {
   const [code, setCode] = useState(SAMPLE);
   const valid = /<svg[\s\S]*<\/svg>/i.test(code);
 
@@ -1069,7 +1397,10 @@ function EditorView({ bg, setBg }: { bg: Bg; setBg: (b: Bg) => void }) {
               type="button"
               className="btn btn-secondary"
               disabled={!valid}
-              onClick={() => download("icon.svg", code)}
+              onClick={() => {
+                download("icon.svg", code);
+                pushToast("Downloaded SVG");
+              }}
             >
               Download SVG
             </button>

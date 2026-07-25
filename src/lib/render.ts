@@ -7,6 +7,7 @@ export type IconStyle = {
   rotate: number;
   flipX: boolean;
   flipY: boolean;
+  opacity: number;
 };
 
 export const DEFAULT_STYLE: IconStyle = {
@@ -16,7 +17,23 @@ export const DEFAULT_STYLE: IconStyle = {
   rotate: 0,
   flipX: false,
   flipY: false,
+  opacity: 1,
 };
+
+export type StylePreset = {
+  id: string;
+  label: string;
+  style: Partial<IconStyle>;
+};
+
+export const STYLE_PRESETS: StylePreset[] = [
+  { id: "soft", label: "Soft", style: { strokeWidth: 1.5, color: "#c5d0e0", opacity: 1 } },
+  { id: "bold", label: "Bold", style: { strokeWidth: 3, color: "#ffffff", opacity: 1 } },
+  { id: "ink", label: "Ink", style: { strokeWidth: 2, color: "#101828", opacity: 1 } },
+  { id: "signal", label: "Signal", style: { strokeWidth: 2, color: "#2f6bff", opacity: 1 } },
+  { id: "mint", label: "Mint", style: { strokeWidth: 2, color: "#0f9f6e", opacity: 1 } },
+  { id: "ghost", label: "Ghost", style: { strokeWidth: 1.5, color: "#e8eef8", opacity: 0.45 } },
+];
 
 function viewBoxCenter(viewBox: string): { cx: number; cy: number } {
   const parts = viewBox.trim().split(/[\s,]+/).map(Number);
@@ -39,6 +56,12 @@ function transformAttrs(icon: IconDef, style: IconStyle): string {
   return ` transform="${parts.join(" ")}"`;
 }
 
+function opacityAttr(opacity: number): string {
+  if (opacity >= 0.999) return "";
+  const v = Math.max(0, Math.min(1, opacity));
+  return ` opacity="${v}"`;
+}
+
 /** Standalone styled SVG for preview, clipboard, and file export. */
 export function toSvg(icon: IconDef, style: IconStyle): string {
   const strokeAttrs = icon.usesStroke
@@ -48,7 +71,7 @@ export function toSvg(icon: IconDef, style: IconStyle): string {
   const body = t ? `<g${t}>${icon.body}</g>` : icon.body;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${style.size}" height="${style.size}"` +
-    ` viewBox="${icon.viewBox}" color="${style.color}"${strokeAttrs}>` +
+    ` viewBox="${icon.viewBox}" color="${style.color}"${strokeAttrs}${opacityAttr(style.opacity)}>` +
     body +
     `</svg>`
   );
@@ -86,6 +109,39 @@ export function toCssDataUri(icon: IconDef, style: IconStyle): string {
     `  background: no-repeat center / contain\n` +
     `    url("data:image/svg+xml,${encoded}");\n` +
     `}`
+  );
+}
+
+/** SVG symbol sprite for a set of icons (compare export). */
+export function toSprite(icons: IconDef[], style: IconStyle): string {
+  const symbols = icons
+    .map((icon) => {
+      const strokeAttrs = icon.usesStroke
+        ? ` stroke="currentColor" stroke-width="${style.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" fill="none"`
+        : ` fill="currentColor"`;
+      const t = transformAttrs(icon, style);
+      const body = t ? `<g${t}>${icon.body}</g>` : icon.body;
+      return (
+        `  <symbol id="${icon.slug}" viewBox="${icon.viewBox}"${strokeAttrs}${opacityAttr(style.opacity)}>\n` +
+        `    ${body}\n` +
+        `  </symbol>`
+      );
+    })
+    .join("\n");
+
+  const uses = icons
+    .map(
+      (icon, i) =>
+        `  <use href="#${icon.slug}" x="${i * (style.size + 8)}" y="0" width="${style.size}" height="${style.size}" color="${style.color}"/>`,
+    )
+    .join("\n");
+
+  const width = icons.length * (style.size + 8) - 8;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.max(width, style.size)}" height="${style.size}">\n` +
+    `  <defs>\n${symbols}\n  </defs>\n` +
+    `${uses}\n` +
+    `</svg>\n`
   );
 }
 
