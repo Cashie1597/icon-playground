@@ -1,20 +1,23 @@
 # Icon Playground
 
-Canonical, editable icon playground & preview for the **Recto** icon set. Browse
-the icons with live style controls, edit raw SVG, and copy/export. Built to deploy
-as a **private** Vercel preview link.
+Canonical, editable icon playground for the **Recto** icon set. Browse icons with live style controls, edit raw SVG, and copy/export.
+
+**Live:** [icon-playground.vercel.app](https://icon-playground.vercel.app)
 
 ## Canonical source
 
-`icons/` is the single source of truth — drop `.svg` files there (subfolders OK).
-A build step scans it and generates `src/icons.generated.ts`:
+`icons/` is the single source of truth — drop `.svg` files there (subfolders OK). A build step scans it and generates `src/icons.generated.ts` (gitignored):
 
 ```bash
 npm run icons        # regenerate the manifest (auto-runs before dev/build)
 ```
 
-The 12 Recto concepts were seeded from `recto/icon-options.html` via
-`scripts/extract-recto.mjs` (re-run it to re-sync).
+Optional re-seed from a Recto HTML sheet (path is an argument — nothing machine-specific):
+
+```bash
+node scripts/extract-recto.mjs /path/to/icon-options.html
+# or: RECTO_HTML=../recto/icon-options.html node scripts/extract-recto.mjs
+```
 
 ## Develop
 
@@ -23,25 +26,26 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-- **Library tab** — grid of canonical icons with size / color / stroke / rotate /
-  background controls; click an icon for the detail panel (size strip, Copy SVG,
-  Copy JSX, Download .svg).
-- **SVG Editor tab** — paste/edit raw SVG with a live preview pane + export.
+- **Library** — grid with size / color / stroke / rotate / background; detail panel (size strip, Copy SVG/JSX, Download SVG/PNG).
+- **SVG Editor** — paste/edit raw SVG with live preview and export.
 
-## Deploy a private link (Vercel)
+## Deploy (Vercel)
+
+Git pushes to `main` on [Cashie1597/icon-playground](https://github.com/Cashie1597/icon-playground) deploy production automatically.
 
 ```bash
-npm i -g vercel      # if needed
-vercel link
-vercel               # preview deploy → prints a private *.vercel.app URL
-vercel --prod        # promote when ready
+vercel link          # once, if not linked
+vercel --prod        # CLI deploy
 ```
 
-Make the link private (choose one in **Vercel → Project → Settings → Deployment
-Protection**):
+Optional protection (Vercel → Project → Settings → Deployment Protection): team SSO or password. Metadata sets `robots: noindex` as a crawl backstop.
 
-- **Vercel Authentication** — only your Vercel team can open the link (default,
-  zero config).
-- **Password Protection** — single shared password for the deployment.
+## Local private tunnel (optional)
 
-`robots` is already set to `noindex` in `src/app/layout.tsx` as a backstop.
+```bash
+cp .ngrok-auth.example .ngrok-auth   # edit user:pass
+./serve.sh --build
+./stop.sh
+```
+
+Credentials stay in `.ngrok-auth` (gitignored) or `NGROK_BASIC_AUTH`. Never commit real passwords.

@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Icon Playground",
-  description: "Canonical, editable icon playground & preview.",
+  description: "Canonical editable playground for the Recto icon set — preview, style, and export SVG/PNG.",
   robots: { index: false, follow: false },
 };
 

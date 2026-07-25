@@ -32,6 +32,8 @@ npm-debug.log*
 .ngrok-auth
 .ngrok-domain
 .serve.pid
+.serve-server.log
+.serve-ngrok.log
 
 # typescript
 *.tsbuildinfo

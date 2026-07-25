@@ -1,12 +1,22 @@
-// One-off: extract the 12 Recto <symbol> concepts from recto/icon-options.html
+// One-off: extract Recto <symbol> concepts from an icon-options HTML file
 // into standalone SVGs under icons/. Safe to re-run (overwrites).
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+//
+// Usage:
+//   node scripts/extract-recto.mjs [path/to/icon-options.html]
+//   RECTO_HTML=../recto/icon-options.html node scripts/extract-recto.mjs
+//
+// No machine-specific paths are hard-coded.
+import { readFile, writeFile, mkdir, access } from "node:fs/promises";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const src = "/Users/cashie/PROJECTS/recto/icon-options.html";
-const outDir = join(root, "icons");
+const candidates = [
+  process.argv[2],
+  process.env.RECTO_HTML,
+  join(root, "recto", "icon-options.html"),
+  join(root, "..", "recto", "icon-options.html"),
+].filter(Boolean);
 
 const NAMES = {
   ic1: "01-turning-recto-page",
@@ -23,6 +33,30 @@ const NAMES = {
   ic12: "12-right-tab-recto",
 };
 
+async function resolveSrc() {
+  for (const c of candidates) {
+    const p = resolve(c);
+    try {
+      await access(p);
+      return p;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+const src = await resolveSrc();
+if (!src) {
+  console.error(
+    "[extract-recto] No icon-options.html found.\n" +
+      "  Pass a path: node scripts/extract-recto.mjs /path/to/icon-options.html\n" +
+      "  Or set RECTO_HTML=...",
+  );
+  process.exit(1);
+}
+
+const outDir = join(root, "icons");
 const html = await readFile(src, "utf8");
 const re = /<symbol\s+id="(ic\d+)"\s+viewBox="([^"]+)"\s*>([\s\S]*?)<\/symbol>/g;
 await mkdir(outDir, { recursive: true });
@@ -39,5 +73,6 @@ while ((m = re.exec(html))) {
   await writeFile(join(outDir, `${name}.svg`), svg, "utf8");
   count++;
 }
+console.log(`[extract-recto] read ${src}`);
 console.log(`[extract-recto] wrote ${count} icon(s) to icons/`);
 if (count !== 12) console.warn(`[extract-recto] expected 12, got ${count}`);

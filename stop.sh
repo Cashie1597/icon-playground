@@ -2,7 +2,7 @@
 # Take down the private link: stop the ngrok tunnel and the next server.
 set -uo pipefail
 cd "$(dirname "$0")"
-export PATH="/opt/homebrew/bin:$PATH"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 PORT="${PORT:-3320}"
 pkill -f "ngrok http $PORT" 2>/dev/null && echo "stopped ngrok tunnel" || echo "no ngrok tunnel"

@@ -78,23 +78,24 @@ export function Playground({ icons }: { icons: IconDef[] }) {
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full glass px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-violet-200/80">
             <span className="h-2 w-2 rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400 animate-gradient bg-[length:200%_200%]" />
-            Private preview
+            Recto icon set
           </div>
           <h1 className="text-4xl font-black tracking-tight text-gradient sm:text-5xl">
             Icon Playground
           </h1>
-          <p className="mt-2 text-sm text-violet-200/60">
+          <p className="mt-2 max-w-xl text-sm text-violet-200/60">
             Canonical set ·{" "}
             <span className="font-semibold text-violet-100">{icons.length} icons</span> · edit,
             preview &amp; export
           </p>
         </div>
-        <nav className="flex rounded-xl glass p-1 text-sm">
+        <nav className="flex rounded-xl glass p-1 text-sm" aria-label="View">
           {(["library", "editor"] as Tab[]).map((t) => (
             <button
               key={t}
+              type="button"
               onClick={() => setTab(t)}
-              className={`rounded-lg px-4 py-2 font-semibold transition ${
+              className={`rounded-lg px-4 py-2 font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-400 ${
                 tab === t
                   ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30"
                   : "text-violet-200/60 hover:text-violet-100"
@@ -133,8 +134,9 @@ function BgToggle({ bg, setBg }: { bg: Bg; setBg: (b: Bg) => void }) {
       {(["dark", "light", "checker"] as Bg[]).map((b) => (
         <button
           key={b}
+          type="button"
           onClick={() => setBg(b)}
-          className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize transition ${
+          className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-400 ${
             bg === b
               ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white"
               : "bg-white/5 text-violet-200/60 hover:bg-white/10 hover:text-violet-100"
