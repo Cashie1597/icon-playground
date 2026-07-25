@@ -53,6 +53,7 @@ const COLOR_SWATCHES = [
 const PNG_SIZES = [128, 256, 512, 1024] as const;
 
 const THEME_KEY = "icon-playground-theme";
+const STYLE_KEY = "icon-playground-style";
 const FAV_KEY = "icon-playground-favorites";
 const RECENT_KEY = "icon-playground-recent";
 const COMPARE_MAX = 4;
@@ -92,6 +93,30 @@ async function downloadPng(filename: string, svg: string, size = 512) {
       a.click();
       URL.revokeObjectURL(url);
     }, "image/png");
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
+async function copyPng(svg: string, size = 512): Promise<boolean> {
+  const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("svg load failed"));
+      img.src = svgUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, size, size);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/png"));
+    if (!blob) return false;
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    return true;
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
@@ -140,6 +165,7 @@ type Toast = { id: number; message: string };
 export function Playground({ icons }: { icons: IconDef[] }) {
   const [tab, setTab] = useState<Tab>("library");
   const [style, setStyle] = useState<IconStyle>(DEFAULT_STYLE);
+  const styleLoaded = useRef(false);
   const [bg, setBg] = useState<Bg>("dark");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<IconDef | null>(() => {
@@ -193,6 +219,18 @@ export function Playground({ icons }: { icons: IconDef[] }) {
   useEffect(() => {
     saveJson(RECENT_KEY, recent);
   }, [recent]);
+
+  useEffect(() => {
+    const saved = loadJson<Partial<IconStyle>>(STYLE_KEY, {});
+    if (saved && typeof saved === "object") {
+      setStyle({ ...DEFAULT_STYLE, ...saved });
+    }
+    styleLoaded.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (styleLoaded.current) saveJson(STYLE_KEY, style);
+  }, [style]);
 
   useEffect(() => {
     if (!selected || typeof window === "undefined") return;
@@ -1269,6 +1307,16 @@ function DetailPanel({
         <CopyButton text={svg} label="Copy SVG" variant="primary" />
         <CopyButton text={jsx} label="Copy JSX" />
         <CopyButton text={css} label="Copy CSS" />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={async () => {
+            const ok = await copyPng(toSvg(icon, { ...style, size: pngSize }), pngSize);
+            pushToast(ok ? `Copied PNG ${pngSize}px` : "Copy failed");
+          }}
+        >
+          Copy PNG
+        </button>
         <button
           type="button"
           className="btn btn-secondary"
