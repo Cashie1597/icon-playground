@@ -22,13 +22,22 @@ export function IconRender({
         fill: "none",
       }
     : { fill: "currentColor" };
+
+  const transforms: string[] = [];
+  if (style.rotate) transforms.push(`rotate(${style.rotate}deg)`);
+  if (style.flipX) transforms.push("scaleX(-1)");
+  if (style.flipY) transforms.push("scaleY(-1)");
+
   return (
     <svg
       width={px}
       height={px}
       viewBox={icon.viewBox}
       color={style.color}
-      style={{ transform: style.rotate ? `rotate(${style.rotate}deg)` : undefined }}
+      style={{
+        transform: transforms.length ? transforms.join(" ") : undefined,
+        transition: "transform 160ms ease",
+      }}
       {...strokeProps}
       dangerouslySetInnerHTML={{ __html: icon.body }}
     />

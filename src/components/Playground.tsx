@@ -10,14 +10,23 @@ import {
   type RefObject,
 } from "react";
 import type { IconDef } from "@/icons.generated";
-import { DEFAULT_STYLE, type IconStyle, toSvg, toJsx } from "@/lib/render";
+import {
+  DEFAULT_STYLE,
+  displayName,
+  toCssDataUri,
+  toJsx,
+  toSvg,
+  type IconStyle,
+} from "@/lib/render";
 import { IconRender } from "./IconRender";
 import { CopyButton } from "./CopyButton";
 
 type Bg = "dark" | "light" | "checker";
 type Tab = "library" | "editor";
-type ExportFmt = "svg" | "jsx";
+type ExportFmt = "svg" | "jsx" | "css";
 type Density = "comfortable" | "compact";
+type LayoutMode = "grid" | "list";
+type Theme = "light" | "dark";
 
 const BG_CLASS: Record<Bg, string> = {
   dark: "preview-dark",
@@ -35,6 +44,9 @@ const COLOR_SWATCHES = [
   "#a78bfa",
   "#ffffff",
 ] as const;
+
+const THEME_KEY = "icon-playground-theme";
+const COMPARE_MAX = 4;
 
 function download(filename: string, text: string) {
   const blob = new Blob([text], { type: "image/svg+xml" });
@@ -84,8 +96,20 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
-function displayName(name: string) {
-  return name.replace(/^\d+\s+/, "");
+function readTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  const saved = window.localStorage.getItem(THEME_KEY);
+  if (saved === "dark" || saved === "light") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function slugFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return new URLSearchParams(window.location.search).get("icon");
+  } catch {
+    return null;
+  }
 }
 
 export function Playground({ icons }: { icons: IconDef[] }) {
@@ -93,20 +117,60 @@ export function Playground({ icons }: { icons: IconDef[] }) {
   const [style, setStyle] = useState<IconStyle>(DEFAULT_STYLE);
   const [bg, setBg] = useState<Bg>("dark");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<IconDef | null>(icons[0] ?? null);
+  const [selected, setSelected] = useState<IconDef | null>(() => {
+    const slug = typeof window !== "undefined" ? slugFromUrl() : null;
+    if (slug) return icons.find((i) => i.slug === slug) ?? icons[0] ?? null;
+    return icons[0] ?? null;
+  });
   const [density, setDensity] = useState<Density>("comfortable");
+  const [layout, setLayout] = useState<LayoutMode>("grid");
+  const [theme, setTheme] = useState<Theme>("light");
+  const [compare, setCompare] = useState<string[]>([]);
+  const [helpOpen, setHelpOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const t = readTheme();
+    setTheme(t);
+    document.documentElement.setAttribute("data-theme", t);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* ignore */
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    if (!selected || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("icon", selected.slug);
+    window.history.replaceState({}, "", url.toString());
+  }, [selected]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return icons;
-    return icons.filter((i) => i.slug.includes(q) || i.name.toLowerCase().includes(q));
+    return icons.filter(
+      (i) =>
+        i.slug.includes(q) ||
+        i.name.toLowerCase().includes(q) ||
+        displayName(i.name).toLowerCase().includes(q),
+    );
   }, [icons, query]);
 
   const selectedIndex = useMemo(() => {
     if (!selected) return -1;
     return filtered.findIndex((i) => i.slug === selected.slug);
   }, [filtered, selected]);
+
+  const compareIcons = useMemo(
+    () => compare.map((slug) => icons.find((i) => i.slug === slug)).filter(Boolean) as IconDef[],
+    [compare, icons],
+  );
 
   const selectByOffset = useCallback(
     (delta: number) => {
@@ -118,6 +182,20 @@ export function Playground({ icons }: { icons: IconDef[] }) {
     [filtered, selectedIndex],
   );
 
+  const pickRandom = useCallback(() => {
+    if (filtered.length === 0) return;
+    const idx = Math.floor(Math.random() * filtered.length);
+    setSelected(filtered[idx]);
+  }, [filtered]);
+
+  const toggleCompare = useCallback((slug: string) => {
+    setCompare((prev) => {
+      if (prev.includes(slug)) return prev.filter((s) => s !== slug);
+      if (prev.length >= COMPARE_MAX) return [...prev.slice(1), slug];
+      return [...prev, slug];
+    });
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -126,6 +204,16 @@ export function Playground({ icons }: { icons: IconDef[] }) {
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
+
+      if (e.key === "?" && !typing) {
+        e.preventDefault();
+        setHelpOpen((v) => !v);
+        return;
+      }
+      if (e.key === "Escape") {
+        setHelpOpen(false);
+        return;
+      }
       if (e.key === "/" && !typing) {
         e.preventDefault();
         searchRef.current?.focus();
@@ -138,11 +226,20 @@ export function Playground({ icons }: { icons: IconDef[] }) {
       } else if (e.key === "ArrowLeft" || e.key === "k") {
         e.preventDefault();
         selectByOffset(-1);
+      } else if (e.key === "r" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        pickRandom();
+      } else if (e.key === "c" && selected && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        toggleCompare(selected.slug);
+      } else if (e.key === "t" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setTheme((th) => (th === "light" ? "dark" : "light"));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectByOffset, tab]);
+  }, [pickRandom, selectByOffset, selected, tab, toggleCompare]);
 
   useEffect(() => {
     if (filtered.length === 0) return;
@@ -163,7 +260,7 @@ export function Playground({ icons }: { icons: IconDef[] }) {
       <header className="panel mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-signal)] text-white shadow-sm"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)] text-white shadow-sm"
             aria-hidden
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -184,31 +281,45 @@ export function Playground({ icons }: { icons: IconDef[] }) {
           </div>
         </div>
 
-        <nav
-          className="flex items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-1"
-          aria-label="View"
-        >
-          {(
-            [
-              { id: "library" as const, label: "Library" },
-              { id: "editor" as const, label: "Editor" },
-            ] as const
-          ).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTab(item.id)}
-              aria-current={tab === item.id ? "page" : undefined}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-                tab === item.id
-                  ? "bg-white text-[var(--fg)] shadow-sm"
-                  : "text-[var(--muted)] hover:text-[var(--fg)]"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="seg" role="group" aria-label="View">
+            {(
+              [
+                { id: "library" as const, label: "Library" },
+                { id: "editor" as const, label: "Editor" },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                data-active={tab === item.id}
+                aria-current={tab === item.id ? "page" : undefined}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary !min-h-9 !px-3"
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+            title="Toggle theme (T)"
+          >
+            {theme === "light" ? "Dark" : "Light"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost !min-h-9 !px-3"
+            onClick={() => setHelpOpen(true)}
+            aria-label="Keyboard shortcuts"
+            title="Shortcuts (?)"
+          >
+            ?
+          </button>
+        </div>
       </header>
 
       <main id="main-content" className="flex-1">
@@ -226,20 +337,120 @@ export function Playground({ icons }: { icons: IconDef[] }) {
             setSelected={setSelected}
             density={density}
             setDensity={setDensity}
+            layout={layout}
+            setLayout={setLayout}
             searchRef={searchRef}
             selectedIndex={selectedIndex}
+            compare={compare}
+            toggleCompare={toggleCompare}
+            pickRandom={pickRandom}
           />
         ) : (
           <EditorView bg={bg} setBg={setBg} />
         )}
       </main>
 
+      {compareIcons.length > 0 && tab === "library" && (
+        <div className="compare-bar">
+          <div className="panel flex flex-wrap items-center gap-3 px-4 py-3">
+            <p className="label-caps shrink-0">Compare</p>
+            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+              {compareIcons.map((icon) => (
+                <button
+                  key={icon.slug}
+                  type="button"
+                  className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5"
+                  onClick={() => setSelected(icon)}
+                  title={displayName(icon.name)}
+                >
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-md ${BG_CLASS[bg]}`}>
+                    <IconRender icon={icon} style={style} size={20} />
+                  </span>
+                  <span className="max-w-[7rem] truncate text-xs font-semibold">
+                    {displayName(icon.name)}
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="text-[var(--muted)] hover:text-[var(--fg)]"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleCompare(icon.slug);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleCompare(icon.slug);
+                      }
+                    }}
+                    aria-label={`Remove ${displayName(icon.name)} from compare`}
+                  >
+                    ×
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="btn btn-ghost !min-h-8 !px-2 !text-xs" onClick={() => setCompare([])}>
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       <footer className="mt-6 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-[var(--muted)]">
         <p>
           Source <span className="mono text-[var(--fg)]">icons/</span>
         </p>
-        <p className="mono">/ search · ← → browse · j k</p>
+        <p className="mono">/ search · ←→ browse · r random · c compare · t theme · ? help</p>
       </footer>
+
+      {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
+    </div>
+  );
+}
+
+function HelpDialog({ onClose }: { onClose: () => void }) {
+  const rows = [
+    ["/", "Focus search"],
+    ["← → or j k", "Browse icons"],
+    ["r", "Random icon"],
+    ["c", "Toggle compare"],
+    ["t", "Toggle theme"],
+    ["?", "This help"],
+    ["Esc", "Close dialog"],
+  ] as const;
+
+  return (
+    <div className="help-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onClick={onClose}>
+      <div className="help-card" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="font-display text-xl">Shortcuts</h2>
+          <button type="button" className="btn btn-ghost !min-h-8 !px-2" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <ul className="flex flex-col gap-2">
+          {rows.map(([keys, label]) => (
+            <li key={keys} className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-[var(--muted)]">{label}</span>
+              <span className="flex flex-wrap justify-end gap-1">
+                {keys.split(" ").map((k) =>
+                  k === "or" ? (
+                    <span key={k} className="text-xs text-[var(--muted)]">
+                      or
+                    </span>
+                  ) : (
+                    <span key={k} className="kbd">
+                      {k}
+                    </span>
+                  ),
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -283,7 +494,7 @@ function BgToggle({ bg, setBg }: { bg: Bg; setBg: (b: Bg) => void }) {
             aria-pressed={bg === b.id}
             className={`rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
               bg === b.id
-                ? "bg-[var(--color-signal)] text-white"
+                ? "bg-[var(--accent)] text-white"
                 : "bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--fg)]"
             }`}
           >
@@ -304,9 +515,12 @@ function ControlsSidebar({
   setQuery,
   density,
   setDensity,
+  layout,
+  setLayout,
   total,
   shown,
   searchRef,
+  pickRandom,
 }: {
   style: IconStyle;
   setStyle: (s: IconStyle) => void;
@@ -316,9 +530,12 @@ function ControlsSidebar({
   setQuery: (q: string) => void;
   density: Density;
   setDensity: (d: Density) => void;
+  layout: LayoutMode;
+  setLayout: (l: LayoutMode) => void;
   total: number;
   shown: number;
   searchRef: RefObject<HTMLInputElement | null>;
+  pickRandom: () => void;
 }) {
   return (
     <aside className="panel flex h-fit flex-col gap-5 p-4 lg:sticky lg:top-3" aria-label="Controls">
@@ -336,15 +553,22 @@ function ControlsSidebar({
             className="field pl-10"
           />
         </div>
-        <p className="mono mt-2 text-xs text-[var(--muted)]">
-          {shown} shown
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <p className="mono text-xs text-[var(--muted)]">{shown} shown</p>
+          <button type="button" className="btn btn-ghost !min-h-8 !px-2 !text-xs" onClick={pickRandom}>
+            Random
+          </button>
+        </div>
       </div>
 
       <div className="border-t border-[var(--border)] pt-4">
         <div className="mb-3 flex items-center justify-between">
           <p className="label-caps">Style</p>
-          <button type="button" className="btn btn-ghost !min-h-8 !px-2 !text-xs" onClick={() => setStyle(DEFAULT_STYLE)}>
+          <button
+            type="button"
+            className="btn btn-ghost !min-h-8 !px-2 !text-xs"
+            onClick={() => setStyle(DEFAULT_STYLE)}
+          >
             Reset
           </button>
         </div>
@@ -380,6 +604,37 @@ function ControlsSidebar({
               aria-label="Rotation"
             />
           </ControlField>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="label-caps">Flip</span>
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                aria-pressed={style.flipX}
+                className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
+                  style.flipX
+                    ? "bg-[var(--accent)] text-white"
+                    : "bg-[var(--surface-2)] text-[var(--muted)]"
+                }`}
+                onClick={() => setStyle({ ...style, flipX: !style.flipX })}
+              >
+                Horizontal
+              </button>
+              <button
+                type="button"
+                aria-pressed={style.flipY}
+                className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${
+                  style.flipY
+                    ? "bg-[var(--accent)] text-white"
+                    : "bg-[var(--surface-2)] text-[var(--muted)]"
+                }`}
+                onClick={() => setStyle({ ...style, flipY: !style.flipY })}
+              >
+                Vertical
+              </button>
+            </div>
+          </div>
+
           <BgToggle bg={bg} setBg={setBg} />
         </div>
       </div>
@@ -400,9 +655,7 @@ function ControlsSidebar({
                 className="h-7 w-7 rounded-full border border-[var(--border)] shadow-sm transition-transform hover:scale-105"
                 style={{
                   background: c,
-                  boxShadow: active
-                    ? `0 0 0 2px #fff, 0 0 0 4px var(--color-signal)`
-                    : undefined,
+                  boxShadow: active ? `0 0 0 2px var(--surface), 0 0 0 4px var(--accent)` : undefined,
                 }}
               />
             );
@@ -419,22 +672,22 @@ function ControlsSidebar({
       </div>
 
       <div className="border-t border-[var(--border)] pt-4">
-        <p className="label-caps mb-2">Grid density</p>
-        <div className="grid grid-cols-2 gap-1">
+        <p className="label-caps mb-2">Layout</p>
+        <div className="mb-2 grid grid-cols-2 gap-1">
           {(
             [
-              { id: "comfortable" as const, label: "Roomy" },
-              { id: "compact" as const, label: "Dense" },
+              { id: "grid" as const, label: "Grid" },
+              { id: "list" as const, label: "List" },
             ] as const
           ).map((d) => (
             <button
               key={d.id}
               type="button"
-              onClick={() => setDensity(d.id)}
-              aria-pressed={density === d.id}
+              onClick={() => setLayout(d.id)}
+              aria-pressed={layout === d.id}
               className={`rounded-lg px-2 py-2 text-xs font-semibold ${
-                density === d.id
-                  ? "bg-[var(--color-signal)] text-white"
+                layout === d.id
+                  ? "bg-[var(--accent)] text-white"
                   : "bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--fg)]"
               }`}
             >
@@ -442,6 +695,30 @@ function ControlsSidebar({
             </button>
           ))}
         </div>
+        {layout === "grid" && (
+          <div className="grid grid-cols-2 gap-1">
+            {(
+              [
+                { id: "comfortable" as const, label: "Roomy" },
+                { id: "compact" as const, label: "Dense" },
+              ] as const
+            ).map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => setDensity(d.id)}
+                aria-pressed={density === d.id}
+                className={`rounded-lg px-2 py-2 text-xs font-semibold ${
+                  density === d.id
+                    ? "bg-[var(--accent)] text-white"
+                    : "bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--fg)]"
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -460,8 +737,13 @@ function LibraryView({
   setSelected,
   density,
   setDensity,
+  layout,
+  setLayout,
   searchRef,
   selectedIndex,
+  compare,
+  toggleCompare,
+  pickRandom,
 }: {
   icons: IconDef[];
   total: number;
@@ -475,8 +757,13 @@ function LibraryView({
   setSelected: (i: IconDef) => void;
   density: Density;
   setDensity: (d: Density) => void;
+  layout: LayoutMode;
+  setLayout: (l: LayoutMode) => void;
   searchRef: RefObject<HTMLInputElement | null>;
   selectedIndex: number;
+  compare: string[];
+  toggleCompare: (slug: string) => void;
+  pickRandom: () => void;
 }) {
   const minTile = density === "compact" ? 92 : 118;
 
@@ -491,21 +778,58 @@ function LibraryView({
         setQuery={setQuery}
         density={density}
         setDensity={setDensity}
+        layout={layout}
+        setLayout={setLayout}
         total={total}
         shown={icons.length}
         searchRef={searchRef}
+        pickRandom={pickRandom}
       />
 
-      <section className="panel min-h-[420px] p-3 sm:p-4" aria-label="Icon grid">
+      <section className="panel min-h-[420px] p-3 sm:p-4" aria-label="Icon collection">
         {icons.length === 0 ? (
           <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="font-display text-2xl">No matches</p>
-            <p className="max-w-xs text-sm text-[var(--muted)]">
-              Try another term, or clear the filter.
-            </p>
+            <p className="max-w-xs text-sm text-[var(--muted)]">Try another term, or clear the filter.</p>
             <button type="button" className="btn btn-secondary" onClick={() => setQuery("")}>
               Clear search
             </button>
+          </div>
+        ) : layout === "list" ? (
+          <div className="flex flex-col gap-1">
+            {icons.map((icon, idx) => {
+              const active = selected?.slug === icon.slug;
+              const inCompare = compare.includes(icon.slug);
+              return (
+                <div key={icon.slug} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="list-row flex-1"
+                    data-active={active}
+                    onClick={() => setSelected(icon)}
+                    aria-current={active ? "true" : undefined}
+                  >
+                    <span className={`flex h-11 w-11 items-center justify-center rounded-lg ${BG_CLASS[bg]}`}>
+                      <IconRender icon={icon} style={style} size={28} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold">{displayName(icon.name)}</span>
+                      <span className="mono block truncate text-[11px] text-[var(--muted)]">{icon.slug}</span>
+                    </span>
+                    <span className="mono text-[10px] text-[var(--muted)]">{String(idx + 1).padStart(2, "0")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn !min-h-9 !px-2 !text-xs ${inCompare ? "btn-primary" : "btn-ghost"}`}
+                    onClick={() => toggleCompare(icon.slug)}
+                    aria-pressed={inCompare}
+                    title="Compare"
+                  >
+                    +
+                  </button>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div
@@ -514,38 +838,54 @@ function LibraryView({
           >
             {icons.map((icon, idx) => {
               const active = selected?.slug === icon.slug;
+              const inCompare = compare.includes(icon.slug);
               return (
-                <button
-                  key={icon.slug}
-                  type="button"
-                  onClick={() => setSelected(icon)}
-                  data-active={active}
-                  className="icon-tile panel-flush flex flex-col gap-2 p-2 text-left"
-                  aria-current={active ? "true" : undefined}
-                  aria-label={`${displayName(icon.name)}${active ? ", selected" : ""}`}
-                >
-                  <div
-                    className={`flex aspect-square items-center justify-center rounded-lg ${BG_CLASS[bg]}`}
+                <div key={icon.slug} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setSelected(icon)}
+                    data-active={active}
+                    className="icon-tile panel-flush flex w-full flex-col gap-2 p-2 text-left"
+                    aria-current={active ? "true" : undefined}
+                    aria-label={`${displayName(icon.name)}${active ? ", selected" : ""}`}
                   >
-                    <IconRender
-                      icon={icon}
-                      style={style}
-                      size={Math.min(style.size, density === "compact" ? 36 : 52)}
-                    />
-                  </div>
-                  <div className="flex items-start justify-between gap-1 px-0.5">
-                    <span
-                      className={`truncate text-xs ${
-                        active ? "font-semibold text-[var(--fg)]" : "text-[var(--muted)]"
-                      }`}
+                    <div
+                      className={`flex aspect-square items-center justify-center rounded-lg ${BG_CLASS[bg]}`}
                     >
-                      {displayName(icon.name)}
-                    </span>
-                    <span className="mono shrink-0 text-[10px] text-[var(--muted)] opacity-70">
-                      {String(idx + 1).padStart(2, "0")}
-                    </span>
-                  </div>
-                </button>
+                      <IconRender
+                        icon={icon}
+                        style={style}
+                        size={Math.min(style.size, density === "compact" ? 36 : 52)}
+                      />
+                    </div>
+                    <div className="flex items-start justify-between gap-1 px-0.5">
+                      <span
+                        className={`truncate text-xs ${
+                          active ? "font-semibold text-[var(--fg)]" : "text-[var(--muted)]"
+                        }`}
+                      >
+                        {displayName(icon.name)}
+                      </span>
+                      <span className="mono shrink-0 text-[10px] text-[var(--muted)] opacity-70">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold ${
+                      inCompare
+                        ? "bg-[var(--accent)] text-white"
+                        : "bg-[color-mix(in_srgb,var(--surface)_85%,transparent)] text-[var(--muted)] hover:text-[var(--fg)]"
+                    }`}
+                    onClick={() => toggleCompare(icon.slug)}
+                    aria-pressed={inCompare}
+                    aria-label={inCompare ? "Remove from compare" : "Add to compare"}
+                    title="Compare"
+                  >
+                    +
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -557,11 +897,9 @@ function LibraryView({
           icon={selected}
           style={style}
           bg={bg}
-          indexLabel={
-            selectedIndex >= 0
-              ? `${selectedIndex + 1} / ${icons.length}`
-              : undefined
-          }
+          indexLabel={selectedIndex >= 0 ? `${selectedIndex + 1} / ${icons.length}` : undefined}
+          inCompare={compare.includes(selected.slug)}
+          onToggleCompare={() => toggleCompare(selected.slug)}
         />
       )}
     </div>
@@ -573,30 +911,30 @@ function DetailPanel({
   style,
   bg,
   indexLabel,
+  inCompare,
+  onToggleCompare,
 }: {
   icon: IconDef;
   style: IconStyle;
   bg: Bg;
   indexLabel?: string;
+  inCompare: boolean;
+  onToggleCompare: () => void;
 }) {
   const [exportFmt, setExportFmt] = useState<ExportFmt>("svg");
   const svg = toSvg(icon, style);
-  const jsx = toJsx(icon);
+  const jsx = toJsx(icon, style);
+  const css = toCssDataUri(icon, style);
   const sizes = [16, 24, 32, 48, 64, 96];
-  const code = exportFmt === "svg" ? svg : jsx;
+  const code = exportFmt === "svg" ? svg : exportFmt === "jsx" ? jsx : css;
 
   return (
-    <aside
-      className="panel flex h-fit flex-col gap-4 p-4 lg:sticky lg:top-3"
-      aria-label="Icon detail"
-    >
+    <aside className="panel flex h-fit flex-col gap-4 p-4 lg:sticky lg:top-3" aria-label="Icon detail">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="label-caps">Selected</p>
-          <h2 className="font-display mt-1 truncate text-2xl leading-tight">
-            {displayName(icon.name)}
-          </h2>
-          <p className="mono mt-1 text-xs text-[var(--color-signal)]">{icon.slug}</p>
+          <h2 className="font-display mt-1 truncate text-2xl leading-tight">{displayName(icon.name)}</h2>
+          <p className="mono mt-1 text-xs text-[var(--accent)]">{icon.slug}</p>
         </div>
         {indexLabel && <span className="chip mono shrink-0">{indexLabel}</span>}
       </div>
@@ -620,11 +958,8 @@ function DetailPanel({
       <div className="flex flex-wrap gap-2">
         <CopyButton text={svg} label="Copy SVG" variant="primary" />
         <CopyButton text={jsx} label="Copy JSX" />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => download(`${icon.slug}.svg`, svg)}
-        >
+        <CopyButton text={css} label="Copy CSS" />
+        <button type="button" className="btn btn-secondary" onClick={() => download(`${icon.slug}.svg`, svg)}>
           SVG file
         </button>
         <button
@@ -634,23 +969,27 @@ function DetailPanel({
         >
           PNG file
         </button>
+        <button
+          type="button"
+          className={`btn ${inCompare ? "btn-primary" : "btn-secondary"}`}
+          onClick={onToggleCompare}
+          aria-pressed={inCompare}
+        >
+          {inCompare ? "In compare" : "Compare"}
+        </button>
       </div>
 
       <div>
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="label-caps">Export</p>
-          <div className="flex rounded-lg bg-[var(--surface-2)] p-0.5" role="group" aria-label="Export format">
-            {(["svg", "jsx"] as ExportFmt[]).map((f) => (
+          <div className="seg" role="group" aria-label="Export format">
+            {(["svg", "jsx", "css"] as ExportFmt[]).map((f) => (
               <button
                 key={f}
                 type="button"
                 onClick={() => setExportFmt(f)}
+                data-active={exportFmt === f}
                 aria-pressed={exportFmt === f}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
-                  exportFmt === f
-                    ? "bg-white text-[var(--fg)] shadow-sm"
-                    : "text-[var(--muted)]"
-                }`}
               >
                 {f}
               </button>
